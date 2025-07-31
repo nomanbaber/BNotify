@@ -2,7 +2,7 @@
 //  BNotifyManager.swift
 //  BNotify
 //
-//  Debug version with thread checks & crash-proof handling
+//  Final crash-proof version with delegate fixes
 //
 
 import Foundation
@@ -10,7 +10,7 @@ import UserNotifications
 import UIKit
 
 @MainActor
-public final class BNotifyManager: NSObject {
+public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
     
     public static let shared = BNotifyManager()
     private override init() {}
@@ -21,14 +21,14 @@ public final class BNotifyManager: NSObject {
     
     // MARK: - Load Configuration
     private func loadConfig() {
-        print("🔍 [BNotify] loadConfig() on main:", Thread.isMainThread)
+        print("🔍 [BNotify] loadConfig() - main actor confirmed")
         
         guard let url = Bundle.main.url(forResource: "PushNotificationConfig", withExtension: "plist"),
               let data = try? Data(contentsOf: url),
               let dict = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
               let baseURL = dict["BASE_URL"] as? String,
               let appId = dict["APP_ID"] as? String else {
-            print("❌ [BNotify] PushNotificationConfig.plist is missing or invalid. Please add it.")
+            print("❌ [BNotify] PushNotificationConfig.plist is missing or invalid.")
             return
         }
         
@@ -39,39 +39,37 @@ public final class BNotifyManager: NSObject {
     }
     
     // MARK: - Register for Push Notifications
-    @MainActor
     public func registerForPushNotifications() {
         print("🔍 [BNotify] registerForPushNotifications() - main actor confirmed")
-
         loadConfig()
-
+        
         guard isConfigured else {
             print("❌ [BNotify] Cannot register for push notifications. Config is missing.")
             return
         }
-
-        UNUserNotificationCenter.current().delegate = self
-
-        // requestAuthorization callback may NOT be on main actor → wrap it
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
-            // Ensure we switch back to MainActor
-            Task { @MainActor in
-                print("🔍 [BNotify] requestAuthorization callback - main actor confirmed")
-
-                if granted {
-                    print("🔍 [BNotify] Permission granted - registering for remote notifications")
-                    UIApplication.shared.registerForRemoteNotifications()
-                } else {
-                    print("⚠️ [BNotify] Push notification permission denied by user.")
+        
+        // Delay delegate setting and authorization slightly to ensure readiness
+        Task { @MainActor in
+            UNUserNotificationCenter.current().delegate = self
+            print("🔍 [BNotify] Delegate set - main actor confirmed")
+            
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+                Task { @MainActor in
+                    print("🔍 [BNotify] requestAuthorization callback - main actor confirmed")
+                    if granted {
+                        UIApplication.shared.registerForRemoteNotifications()
+                        print("✅ [BNotify] Successfully requested remote notifications")
+                    } else {
+                        print("⚠️ [BNotify] Push notification permission denied by user.")
+                    }
                 }
             }
         }
     }
-
-
+    
     // MARK: - APNs Callbacks
     public func didRegisterForRemoteNotifications(token: Data) {
-        print("🔍 [BNotify] didRegisterForRemoteNotifications() on main:", Thread.isMainThread)
+        print("🔍 [BNotify] didRegisterForRemoteNotifications() - main actor confirmed")
         
         guard isConfigured, let appId = self.appId, let apiClient = self.apiClient else {
             print("❌ [BNotify] Cannot send token. SDK is not configured properly.")
@@ -89,22 +87,29 @@ public final class BNotifyManager: NSObject {
     public func didFailToRegisterForRemoteNotifications(error: Error) {
         print("❌ [BNotify] Failed to register for push notifications: \(error.localizedDescription)")
     }
-}
-
-// MARK: - Notification Delegate
-extension BNotifyManager: @preconcurrency UNUserNotificationCenterDelegate {
-    public func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                       willPresent notification: UNNotification,
-                                       withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        print("🔍 [BNotify] willPresentNotification() on main:", Thread.isMainThread)
+    
+    // MARK: - UNUserNotificationCenterDelegate
+    // MARK: - UNUserNotificationCenterDelegate
+    nonisolated public func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        // Call immediately on the same thread as received
+        print("🔍 [BNotify] willPresentNotification()")
         completionHandler([.alert, .sound])
     }
-    
-    nonisolated public func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                       didReceive response: UNNotificationResponse,
-                                       withCompletionHandler completionHandler: @escaping () -> Void) {
-        print("🔍 [BNotify] didReceiveNotification() on main:", Thread.isMainThread)
+
+    nonisolated public func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        // Do lightweight work, then call completionHandler immediately
+        print("🔍 [BNotify] didReceiveNotification()")
         print("🔔 [BNotify] Notification tapped: \(response.notification.request.content.userInfo)")
         completionHandler()
     }
+
+
 }
