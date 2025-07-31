@@ -2,7 +2,7 @@
 //  BNotifyManager.swift
 //  BNotify
 //
-//  Final crash-proof version with delegate fixes
+//  Final version with delegate fixes and crash-proofing
 //
 
 import Foundation
@@ -12,8 +12,15 @@ import UIKit
 @MainActor
 public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
     
+    // Singleton instance
     public static let shared = BNotifyManager()
-    private override init() {}
+    private override init() {
+        super.init()
+        print("✅ [BNotify] BNotifyManager initialized")
+    }
+    deinit {
+        print("❌ [BNotify] BNotifyManager deallocated!")
+    }
     
     private var apiClient: APIClient?
     private var appId: String?
@@ -48,21 +55,21 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
             return
         }
         
-        // Delay delegate setting and authorization slightly to ensure readiness
-        Task { @MainActor in
-            UNUserNotificationCenter.current().delegate = self
-            print("🔍 [BNotify] Delegate set - main actor confirmed")
+        // Ensure delegate is set and stays alive
+        UNUserNotificationCenter.current().delegate = self
+        print("🔍 [BNotify] Delegate set - main actor confirmed")
+        
+        // Request authorization
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+            if !granted {
+                print("⚠️ [BNotify] Push notification permission denied by user.")
+                return
+            }
             
-            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
-                Task { @MainActor in
-                    print("🔍 [BNotify] requestAuthorization callback - main actor confirmed")
-                    if granted {
-                        UIApplication.shared.registerForRemoteNotifications()
-                        print("✅ [BNotify] Successfully requested remote notifications")
-                    } else {
-                        print("⚠️ [BNotify] Push notification permission denied by user.")
-                    }
-                }
+            // Switch back to main actor to register with APNs
+            Task { @MainActor in
+                print("🔍 [BNotify] Authorization granted - registering for remote notifications")
+                UIApplication.shared.registerForRemoteNotifications()
             }
         }
     }
@@ -88,15 +95,13 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
         print("❌ [BNotify] Failed to register for push notifications: \(error.localizedDescription)")
     }
     
-    // MARK: - UNUserNotificationCenterDelegate
-    // MARK: - UNUserNotificationCenterDelegate
+    // MARK: - UNUserNotificationCenterDelegate (must be nonisolated)
     nonisolated public func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        // Call immediately on the same thread as received
-        print("🔍 [BNotify] willPresentNotification()")
+        // Call immediately on the same thread (avoid race conditions)
         completionHandler([.alert, .sound])
     }
 
@@ -105,11 +110,7 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        // Do lightweight work, then call completionHandler immediately
-        print("🔍 [BNotify] didReceiveNotification()")
         print("🔔 [BNotify] Notification tapped: \(response.notification.request.content.userInfo)")
         completionHandler()
     }
-
-
 }
