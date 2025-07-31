@@ -40,6 +40,7 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
     }
 
     // MARK: - Register for Push Notifications
+    @MainActor
     public func registerForPushNotifications() {
         print("🔍 [BNotify] registerForPushNotifications() - main actor confirmed")
         loadConfig()
@@ -49,28 +50,26 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
             return
         }
 
-        // Delay delegate setup slightly to avoid race with Apple's callbacks
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            UNUserNotificationCenter.current().delegate = self
-            print("🔍 [BNotify] Delegate set - main actor confirmed")
+        // 🚨 Temporarily remove the delegate line
+        // UNUserNotificationCenter.current().delegate = self
 
-            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-                if let error = error {
-                    print("❌ [BNotify] requestAuthorization error: \(error.localizedDescription)")
-                }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            if let error = error {
+                print("❌ [BNotify] requestAuthorization error: \(error.localizedDescription)")
+            }
 
-                if !granted {
-                    print("⚠️ [BNotify] Push notification permission denied by user")
-                    return
-                }
+            if !granted {
+                print("⚠️ [BNotify] Push notification permission denied by user")
+                return
+            }
 
-                Task { @MainActor in
-                    print("🔍 [BNotify] Authorization granted - calling registerForRemoteNotifications()")
-                    UIApplication.shared.registerForRemoteNotifications()
-                }
+            Task { @MainActor in
+                print("🔍 [BNotify] Authorization granted - calling registerForRemoteNotifications()")
+                UIApplication.shared.registerForRemoteNotifications()
             }
         }
     }
+
 
     // MARK: - APNs Callbacks
     public func didRegisterForRemoteNotifications(token: Data) {
