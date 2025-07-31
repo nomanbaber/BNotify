@@ -50,8 +50,19 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
             return
         }
 
-        print("✅ [BNotify] Minimal test: No delegate, no APNs registration")
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            if let error = error {
+                print("❌ [BNotify] requestAuthorization error: \(error.localizedDescription)")
+            }
+
+            if granted {
+                print("✅ [BNotify] Permission granted (Step 1)")
+            } else {
+                print("⚠️ [BNotify] Permission denied (Step 1)")
+            }
+        }
     }
+
 
 
     // MARK: - APNs Callbacks
