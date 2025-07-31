@@ -42,21 +42,24 @@ public final class BNotifyManager: NSObject {
     @MainActor
     public func registerForPushNotifications() {
         print("🔍 [BNotify] registerForPushNotifications() - main actor confirmed")
-        
+
         loadConfig()
-        
+
         guard isConfigured else {
             print("❌ [BNotify] Cannot register for push notifications. Config is missing.")
             return
         }
-        
+
         UNUserNotificationCenter.current().delegate = self
-        
-        // requestAuthorization callback may come on background thread
+
+        // requestAuthorization callback may NOT be on main actor → wrap it
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+            // Ensure we switch back to MainActor
             Task { @MainActor in
+                print("🔍 [BNotify] requestAuthorization callback - main actor confirmed")
+
                 if granted {
-                    print("🔍 [BNotify] Permission granted, calling registerForRemoteNotifications() - main actor confirmed")
+                    print("🔍 [BNotify] Permission granted - registering for remote notifications")
                     UIApplication.shared.registerForRemoteNotifications()
                 } else {
                     print("⚠️ [BNotify] Push notification permission denied by user.")
@@ -64,6 +67,7 @@ public final class BNotifyManager: NSObject {
             }
         }
     }
+
 
     // MARK: - APNs Callbacks
     public func didRegisterForRemoteNotifications(token: Data) {
