@@ -1,5 +1,5 @@
 //
-//  PushNotificationSDK.swift
+//  BNotifyManager.swift
 //  BNotify
 //
 //  Created by Noman Babar on 31/07/2025.
@@ -9,9 +9,10 @@ import Foundation
 import UserNotifications
 import UIKit
 
-public final class PushNotificationManager: NSObject {
+@MainActor // Ensures concurrency safety for static shared instance
+public final class BNotifyManager: NSObject {
     
-    public static let shared = PushNotificationManager()
+    public static let shared = BNotifyManager()
     private override init() {}
     
     private var apiClient: APIClient!
@@ -31,7 +32,7 @@ public final class PushNotificationManager: NSObject {
         self.apiClient = APIClient(baseURL: baseURL, appId: appId)
     }
     
-    // Call this in AppDelegate of client app
+    // Call this in SwiftUI App .onAppear or AppDelegate of client app
     public func registerForPushNotifications() {
         loadConfig()
         
@@ -62,14 +63,14 @@ public final class PushNotificationManager: NSObject {
 }
 
 // MARK: Notification Delegate
-extension PushNotificationManager: UNUserNotificationCenterDelegate {
-    public func userNotificationCenter(_ center: UNUserNotificationCenter,
+extension BNotifyManager: UNUserNotificationCenterDelegate {
+    nonisolated public func userNotificationCenter(_ center: UNUserNotificationCenter,
                                        willPresent notification: UNNotification,
                                        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         completionHandler([.alert, .sound])
     }
     
-    public func userNotificationCenter(_ center: UNUserNotificationCenter,
+    nonisolated public func userNotificationCenter(_ center: UNUserNotificationCenter,
                                        didReceive response: UNNotificationResponse,
                                        withCompletionHandler completionHandler: @escaping () -> Void) {
         print("Notification tapped: \(response.notification.request.content.userInfo)")
