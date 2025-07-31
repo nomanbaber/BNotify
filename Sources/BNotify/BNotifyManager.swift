@@ -9,17 +9,16 @@ import Foundation
 import UserNotifications
 import UIKit
 
-@MainActor
 public final class BNotifyManager: NSObject {
     
-    public static let shared = BNotifyManager()
+    @MainActor public static let shared = BNotifyManager()
     private override init() {}
     
     private var apiClient: APIClient?
     private var appId: String?
     private var isConfigured = false
     
-    // Load PushNotificationConfig.plist from client app
+    // MARK: - Load Configuration
     private func loadConfig() {
         guard let url = Bundle.main.url(forResource: "PushNotificationConfig", withExtension: "plist"),
               let data = try? Data(contentsOf: url),
@@ -36,7 +35,8 @@ public final class BNotifyManager: NSObject {
         print("✅ [BNotify] Configuration loaded successfully for APP_ID: \(appId)")
     }
     
-    // Call this in SwiftUI App .onAppear or AppDelegate of client app
+    // MARK: - Register for Push Notifications
+    @MainActor
     public func registerForPushNotifications() {
         loadConfig()
         
@@ -45,49 +45,66 @@ public final class BNotifyManager: NSObject {
             return
         }
         
+        // We are already on the main actor, so no DispatchQueue.main.async needed
         UNUserNotificationCenter.current().delegate = self
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] granted, _ in
+            guard let self = self else { return }
+            
             guard granted else {
                 print("⚠️ [BNotify] Push notification permission denied by user.")
                 return
             }
-            DispatchQueue.main.async {
+            
+            // Use @MainActor here because this closure is not guaranteed on main thread
+            Task { @MainActor in
                 UIApplication.shared.registerForRemoteNotifications()
             }
         }
     }
+
     
+    // MARK: - APNs Callbacks
     public func didRegisterForRemoteNotifications(token: Data) {
         guard isConfigured, let appId = self.appId, let apiClient = self.apiClient else {
             print("❌ [BNotify] Cannot send token. SDK is not configured properly.")
             return
         }
-        
+
+        // Already on the main actor because class is @MainActor
         let tokenString = token.map { String(format: "%02.2hhx", $0) }.joined()
         print("📲 [BNotify] Device Token: \(tokenString)")
-        
+
         // Send token to backend
         let request = DeviceTokenRequest(deviceToken: tokenString, platform: "iOS", appId: appId)
         apiClient.sendDeviceToken(request)
     }
-    
+
     public func didFailToRegisterForRemoteNotifications(error: Error) {
-        print("❌ [BNotify] Failed to register for push notifications: \(error.localizedDescription)")
+        DispatchQueue.main.async {
+            print("❌ [BNotify] Failed to register for push notifications: \(error.localizedDescription)")
+        }
     }
 }
 
-// MARK: Notification Delegate
-extension BNotifyManager: @preconcurrency UNUserNotificationCenterDelegate {
+// MARK: - Notification Delegate
+// MARK: - Notification Delegate
+extension BNotifyManager: UNUserNotificationCenterDelegate {
+    
     public func userNotificationCenter(_ center: UNUserNotificationCenter,
                                        willPresent notification: UNNotification,
                                        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        // Call directly on the same thread → avoid async dispatch
         completionHandler([.alert, .sound])
     }
     
     public func userNotificationCenter(_ center: UNUserNotificationCenter,
                                        didReceive response: UNNotificationResponse,
                                        withCompletionHandler completionHandler: @escaping () -> Void) {
+        // Handle the notification (safe, quick work only)
         print("🔔 [BNotify] Notification tapped: \(response.notification.request.content.userInfo)")
+        
+        // Call immediately to avoid data race
         completionHandler()
     }
 }
+
