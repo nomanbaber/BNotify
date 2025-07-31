@@ -39,7 +39,6 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
         print("✅ [BNotify] Configuration loaded for APP_ID: \(appId)")
     }
 
-    // MARK: - Register for Push Notifications
     @MainActor
     public func registerForPushNotifications() {
         print("🔍 [BNotify] registerForPushNotifications() - main actor confirmed")
@@ -50,18 +49,21 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
             return
         }
 
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            if let error = error {
-                print("❌ [BNotify] requestAuthorization error: \(error.localizedDescription)")
-            }
+        DispatchQueue.main.async {
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+                if let error = error {
+                    print("❌ [BNotify] requestAuthorization error: \(error.localizedDescription)")
+                }
 
-            if granted {
-                print("✅ [BNotify] Permission granted (Step 1)")
-            } else {
-                print("⚠️ [BNotify] Permission denied (Step 1)")
+                if granted {
+                    print("✅ [BNotify] Permission granted (Step 1)")
+                } else {
+                    print("⚠️ [BNotify] Permission denied (Step 1)")
+                }
             }
         }
     }
+
 
 
 
