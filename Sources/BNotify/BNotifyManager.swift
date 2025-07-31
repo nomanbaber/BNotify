@@ -40,7 +40,6 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
     }
 
     // MARK: - Register for Push Notifications
-    @MainActor
     public func registerForPushNotifications() {
         print("🔍 [BNotify] registerForPushNotifications() - main actor confirmed")
         loadConfig()
@@ -50,9 +49,13 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
             return
         }
 
-        // 🚨 Temporarily remove the delegate line
-        // UNUserNotificationCenter.current().delegate = self
+        // Delay delegate setup slightly to avoid pending notification crash
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            UNUserNotificationCenter.current().delegate = self
+            print("🔍 [BNotify] Delegate set - main actor confirmed")
+        }
 
+        // Request notification permissions
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
             if let error = error {
                 print("❌ [BNotify] requestAuthorization error: \(error.localizedDescription)")
@@ -70,19 +73,19 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-
     // MARK: - APNs Callbacks
     public func didRegisterForRemoteNotifications(token: Data) {
         print("🔍 [BNotify] didRegisterForRemoteNotifications() - main actor confirmed")
+
+        let tokenString = token.map { String(format: "%02.2hhx", $0) }.joined()
+        print("📲 [BNotify] Device Token (iOS): \(tokenString)")
 
         guard isConfigured, let appId = appId, let apiClient = apiClient else {
             print("❌ [BNotify] Cannot send token: SDK not configured")
             return
         }
 
-        let tokenString = token.map { String(format: "%02.2hhx", $0) }.joined()
-        print("📲 [BNotify] Device Token: \(tokenString)")
-
+        // Send token to backend
         let request = DeviceTokenRequest(deviceToken: tokenString, platform: "iOS", appId: appId)
         apiClient.sendDeviceToken(request)
     }
@@ -97,7 +100,7 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        // Call immediately to avoid threading issues
+        // Foreground notification display
         completionHandler([.alert, .sound])
     }
 
@@ -106,7 +109,7 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        // Only log and complete
+        // Background notification tapped
         print("🔔 [BNotify] Notification tapped: \(response.notification.request.content.userInfo)")
         completionHandler()
     }
