@@ -12,23 +12,31 @@ public class APIClient {
     private let baseURL: URL
     private let projectId: String
     private let appId: String
+    private let apiKey: String
 
-    public init(baseURL: String, projectId: String, appId: String, session: URLSession = .shared) {
+    public init(baseURL: String,
+                projectId: String,
+                appId: String,
+                apiKey: String,
+                session: URLSession = .shared) {
         guard let url = URL(string: baseURL) else {
             fatalError("Invalid BASE_URL: \(baseURL)")
         }
         self.baseURL   = url
         self.projectId = projectId
         self.appId     = appId
+        self.apiKey    = apiKey
         self.session   = session
     }
 
     public func registerDevice(_ requestModel: DeviceRegistrationRequest) {
         let endpoint = baseURL.appendingPathComponent("api/devices/register")
+        print("🔗 [BNotify] Register endpoint URL:", endpoint.absoluteString)
+
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        print("🔗 [BNotify] Register endpoint URL:", endpoint.absoluteString)
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
         do {
             request.httpBody = try JSONEncoder().encode(requestModel)

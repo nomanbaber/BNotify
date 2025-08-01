@@ -1,3 +1,10 @@
+//
+//  PushNotificationSDK.swift
+//  BNotify
+//
+//  Created by Noman Babar on 31/07/2025.
+//
+
 import Foundation
 import UserNotifications
 import UIKit
@@ -12,6 +19,7 @@ public final class BNotifyManager {
     private var baseURL: String?
     private var projectId: String?
     private var appId: String?
+    private var apiKey: String?
     private var isConfigured = false
 
     // MARK: – Lazy API client
@@ -28,7 +36,8 @@ public final class BNotifyManager {
             ) as? [String: Any],
             let base      = dict["BASE_URL"]   as? String,
             let project   = dict["PROJECT_ID"] as? String,
-            let app       = dict["APP_ID"]     as? String
+            let app       = dict["APP_ID"]     as? String,
+            let key       = dict["API_KEY"]    as? String
         else {
             print("❌ [BNotify] Missing or invalid PushNotificationConfig.plist")
             return
@@ -36,8 +45,16 @@ public final class BNotifyManager {
         baseURL     = base
         projectId   = project
         appId       = app
+        apiKey      = key
         isConfigured = true
-        print("✅ [BNotify] Loaded BASE_URL: \(base), PROJECT_ID: \(project), APP_ID: \(app)")
+
+        print("""
+            ✅ [BNotify] Loaded:
+               • BASE_URL:   \(base)
+               • PROJECT_ID: \(project)
+               • APP_ID:     \(app)
+               • API_KEY:    \(String(key.prefix(8)))…\(String(key.suffix(4)))
+            """)
     }
 
     // MARK: – Public API
@@ -72,7 +89,8 @@ public final class BNotifyManager {
         guard
             let base    = baseURL,
             let project = projectId,
-            let app     = appId
+            let app     = appId,
+            let key     = apiKey
         else {
             print("❌ [BNotify] Missing config, cannot register device")
             return
@@ -125,12 +143,13 @@ public final class BNotifyManager {
             lng: lng
         )
 
-        // lazy init client
+        // lazy init client (injecting apiKey)
         if apiClient == nil {
             apiClient = APIClient(
                 baseURL: base,
                 projectId: project,
-                appId: app
+                appId: app,
+                apiKey: key
             )
         }
         apiClient?.registerDevice(req)
