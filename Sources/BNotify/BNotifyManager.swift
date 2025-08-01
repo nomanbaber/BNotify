@@ -1,131 +1,83 @@
-//
-//  BNotifyManager.swift
-//  BNotify
-//
-
 import Foundation
 import UserNotifications
 import UIKit
 
 @MainActor
-public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
-
+public final class BNotifyManager {
     // MARK: - Singleton
     public static let shared = BNotifyManager()
+    private init() {}      // ← no override now
 
-    // Property to check if manager is configured (for AppDelegate)
-    public static var sharedIsConfigured: Bool {
-        return BNotifyManager.shared.isConfigured
-    }
-
-    // MARK: - Properties
-    private var apiClient: APIClient?
+    // MARK: - Configuration
     private var appId: String?
     private var baseURL: String?
-    internal var isConfigured = false
+    private var isConfigured = false
 
-    // MARK: - Init
-    private override init() {
-        super.init()
-        print("✅ [BNotify] BNotifyManager initialized")
-    }
-
-    // MARK: - Load Config
     private func loadConfig() {
         print("🔍 [BNotify] loadConfig()")
-
-        guard let url = Bundle.main.url(forResource: "PushNotificationConfig", withExtension: "plist"),
-              let data = try? Data(contentsOf: url),
-              let dict = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
-              let baseURL = dict["BASE_URL"] as? String,
-              let appId = dict["APP_ID"] as? String else {
-            print("❌ [BNotify] PushNotificationConfig.plist missing or invalid")
+        guard
+            let url = Bundle.main.url(forResource: "PushNotificationConfig", withExtension: "plist"),
+            let data = try? Data(contentsOf: url),
+            let dict = try? PropertyListSerialization.propertyList(
+                from: data, options: [], format: nil
+            ) as? [String: Any],
+            let base = dict["BASE_URL"] as? String,
+            let id = dict["APP_ID"] as? String
+        else {
+            print("❌ [BNotify] Missing or invalid PushNotificationConfig.plist")
             return
         }
-
-        self.appId = appId
-        self.baseURL = baseURL
-        self.apiClient = nil // lazy init later
-        self.isConfigured = true
-        print("✅ [BNotify] Configuration loaded for APP_ID: \(appId)")
+        baseURL = base
+        appId    = id
+        isConfigured = true
+        print("✅ [BNotify] Configuration loaded for APP_ID: \(id)")
     }
 
-    // MARK: - Register for Push Notifications
-    @MainActor
+    // MARK: - Public API
+    /// Call this from your App’s onAppear or similar.
     public func registerForPushNotifications() {
-        // 1) Always execute on the main actor / main thread
-        DispatchQueue.main.async {
-            self.loadConfig()
-            guard self.isConfigured else {
-                print("❌ [BNotify] Config missing, cannot register")
-                return
-            }
-
-            let center = UNUserNotificationCenter.current()
-            center.delegate = self
-            print("🔍 [BNotify] UNUserNotificationCenter.delegate set")
-
-            // 2) Ask for permission
-            center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-                DispatchQueue.main.async {
-                    if let error = error {
-                        print("❌ [BNotify] requestAuthorization error: \(error.localizedDescription)")
-                        return
-                    }
-                    guard granted else {
-                        print("⚠️ [BNotify] Push notification permission denied")
-                        return
-                    }
-
-                    // 3) Register with APNs
-                    print("🔍 [BNotify] Calling registerForRemoteNotifications()")
-                    UIApplication.shared.registerForRemoteNotifications()
-                }
-            }
-        }
-    }
-
-
-    // MARK: - APNs Callbacks
-    public func didRegisterForRemoteNotifications(token: Data) {
-        let tokenString = token.map { String(format: "%02.2hhx", $0) }.joined()
-        print("📲 [BNotify] Device Token: \(tokenString)")
-
-        // Skip backend calls in test mode
-        guard isConfigured, let appId = appId, appId != "app_12345", let baseURL = baseURL else {
-            print("⚠️ [BNotify] Test mode detected - skipping backend API call")
+        loadConfig()
+        guard isConfigured else {
+            print("❌ [BNotify] Config missing, cannot register")
             return
         }
 
-        // Lazy init APIClient if needed
-        if apiClient == nil {
-            apiClient = APIClient(baseURL: baseURL, appId: appId)
+        Task { @MainActor in
+            let center = UNUserNotificationCenter.current()
+            do {
+                let granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
+                print("🔍 [BNotify] Permission granted:", granted)
+                guard granted else {
+                    print("⚠️ [BNotify] User denied push permission")
+                    return
+                }
+                print("🔍 [BNotify] Registering with APNs…")
+                UIApplication.shared.registerForRemoteNotifications()
+            } catch {
+                print("❌ [BNotify] Authorization error:", error)
+            }
         }
-
-        let request = DeviceTokenRequest(deviceToken: tokenString, platform: "iOS", appId: appId)
-        apiClient?.sendDeviceToken(request)
     }
 
+    /// Forwarded from your AppDelegate’s didRegister…
+    public func didRegisterForRemoteNotifications(token: Data) {
+        let hex = token.map { String(format: "%02.2hhx", $0) }.joined()
+        print("📲 [BNotify] Device Token:", hex)
+
+        // skip backend in test-mode
+        guard let id = appId, id != "app_12345",
+              let base = baseURL else {
+            print("⚠️ [BNotify] Skipping backend call (test mode)")
+            return
+        }
+        let client = APIClient(baseURL: base, appId: id)
+        client.sendDeviceToken(
+            DeviceTokenRequest(deviceToken: hex, platform: "iOS", appId: id)
+        )
+    }
+
+    /// Forwarded from your AppDelegate’s didFail…
     public func didFailToRegisterForRemoteNotifications(error: Error) {
-        print("❌ [BNotify] Failed APNs registration: \(error.localizedDescription)")
-    }
-
-    // MARK: - UNUserNotificationCenterDelegate
-    nonisolated public func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification,
-        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
-    ) {
-        print("🔔 [BNotify] willPresent notification: \(notification.request.identifier)")
-        completionHandler([.alert, .sound])
-    }
-
-    nonisolated public func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse,
-        withCompletionHandler completionHandler: @escaping () -> Void
-    ) {
-        print("🔔 [BNotify] didReceive notification: \(response.notification.request.identifier)")
-        completionHandler()
+        print("❌ [BNotify] APNs registration failed:", error.localizedDescription)
     }
 }
