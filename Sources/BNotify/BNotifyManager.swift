@@ -54,7 +54,7 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
     // MARK: - Register (Safe Mode for Debugging)
     @MainActor
     public func registerForPushNotifications() {
-        loadConfig()
+//        loadConfig()
 
         guard isConfigured else {
             print("❌ [BNotify] Config missing, cannot register")
