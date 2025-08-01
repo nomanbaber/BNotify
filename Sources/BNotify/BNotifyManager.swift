@@ -53,39 +53,33 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
     // MARK: - Register for Push Notifications
     @MainActor
     public func registerForPushNotifications() {
-        // 1. Load configuration
-        loadConfig()
-        guard isConfigured else {
-            print("❌ [BNotify] Config missing, cannot register")
-            return
-        }
-
-        // 2. Ask the user for permission
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            if let error = error {
-                print("❌ [BNotify] requestAuthorization error: \(error.localizedDescription)")
-            }
-            guard granted else {
-                print("⚠️ [BNotify] Push notification permission denied by user")
+        // 1) Always execute on the main actor / main thread
+        DispatchQueue.main.async {
+            self.loadConfig()
+            guard self.isConfigured else {
+                print("❌ [BNotify] Config missing, cannot register")
                 return
             }
 
-            // 3. Register with APNs on the main thread
-            DispatchQueue.main.async {
-                print("🔍 [BNotify] Calling registerForRemoteNotifications()")
-                UIApplication.shared.registerForRemoteNotifications()
+            let center = UNUserNotificationCenter.current()
+            center.delegate = self
+            print("🔍 [BNotify] UNUserNotificationCenter.delegate set")
 
-                // 4. After a short delay, set the delegate and replay queued callbacks
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    UNUserNotificationCenter.current().delegate = self
-                    print("✅ [BNotify] Delegate set after APNs registration")
-
-                    // Dynamically invoke replayPendingAPNsCallbacks() if implemented
-                    let selector = Selector(("replayPendingAPNsCallbacks"))
-                    if let delegate = UIApplication.shared.delegate,
-                       delegate.responds(to: selector) {
-                        _ = delegate.perform(selector)
+            // 2) Ask for permission
+            center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+                DispatchQueue.main.async {
+                    if let error = error {
+                        print("❌ [BNotify] requestAuthorization error: \(error.localizedDescription)")
+                        return
                     }
+                    guard granted else {
+                        print("⚠️ [BNotify] Push notification permission denied")
+                        return
+                    }
+
+                    // 3) Register with APNs
+                    print("🔍 [BNotify] Calling registerForRemoteNotifications()")
+                    UIApplication.shared.registerForRemoteNotifications()
                 }
             }
         }
