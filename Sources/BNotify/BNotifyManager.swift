@@ -10,6 +10,7 @@ public final class BNotifyManager {
     private var appId: String?
     private var baseURL: String?
     private var isConfigured = false
+    private var apiClient: APIClient?
 
     private func loadConfig() {
         guard
@@ -64,10 +65,24 @@ public final class BNotifyManager {
     /// Forward into this from your AppDelegate
     public func didRegisterForRemoteNotifications(token: Data) {
         let hex = token.map { String(format: "%02.2hhx", $0) }.joined()
-        print("🔍 AppDelegate didRegister — forwarding to SDK")
         print("📲 [BNotify] Device Token:", hex)
-        // (Test-mode skip backend)
+
+        // Skip in test mode
+        guard let id = appId, id != "app_12345",
+              let base = baseURL else {
+            print("⚠️ [BNotify] Test mode – skipping backend call")
+            return
+        }
+
+        // Lazily initialize your client if needed
+        if apiClient == nil {
+            apiClient = APIClient(baseURL: base, appId: id)
+        }
+
+        let req = DeviceTokenRequest(deviceToken: hex, appId: id)
+        apiClient?.sendDeviceToken(req)
     }
+
 
     public func didFailToRegisterForRemoteNotifications(error: Error) {
         print("🔍 AppDelegate didFail — forwarding to SDK")

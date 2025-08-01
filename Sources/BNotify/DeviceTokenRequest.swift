@@ -7,8 +7,16 @@
 
 import Foundation
 
-internal struct DeviceTokenRequest: Codable {
-    let deviceToken: String
-    let platform: String
-    let appId: String
+import Foundation
+
+public struct DeviceTokenRequest: Codable {
+    public let deviceToken: String
+    public let platform: String
+    public let appId: String
+
+    public init(deviceToken: String, platform: String = "iOS", appId: String) {
+        self.deviceToken = deviceToken
+        self.platform = platform
+        self.appId = appId
+    }
 }
