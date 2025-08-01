@@ -53,7 +53,6 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
         UNUserNotificationCenter.current().delegate = self
         print("✅ [BNotify] Delegate set successfully")
 
-        // Request permission and then register with APNs
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
             if let error = error {
                 print("❌ [BNotify] requestAuthorization error: \(error.localizedDescription)")
@@ -64,7 +63,6 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
                 return
             }
 
-            // Delay APNs registration slightly to avoid race
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 print("🔍 [BNotify] Calling registerForRemoteNotifications() after delegate setup")
                 UIApplication.shared.registerForRemoteNotifications()
@@ -101,11 +99,13 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
     }
 
     // MARK: - UNUserNotificationCenterDelegate
+    // MARK: - UNUserNotificationCenterDelegate
     nonisolated public func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
+        print("🔔 [BNotify] willPresent notification: \(notification.request.identifier)")
         completionHandler([.alert, .sound])
     }
 
@@ -114,7 +114,8 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        print("🔔 [BNotify] Notification tapped: \(response.notification.request.content.userInfo)")
+        print("🔔 [BNotify] didReceive notification: \(response.notification.request.identifier)")
         completionHandler()
     }
+
 }
