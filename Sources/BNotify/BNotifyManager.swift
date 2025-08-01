@@ -60,7 +60,7 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
             return
         }
 
-        // Request permission
+        // Just request permission and register, no delegate
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
             if let error = error {
                 print("❌ [BNotify] requestAuthorization error: \(error.localizedDescription)")
@@ -71,22 +71,9 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
                 return
             }
 
-            // Register with APNs
             DispatchQueue.main.async {
-                print("🔍 [BNotify] Calling registerForRemoteNotifications()")
+                print("🔍 [BNotify] Calling registerForRemoteNotifications() (NO DELEGATE)")
                 UIApplication.shared.registerForRemoteNotifications()
-
-                // Set delegate after APNs registration
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    UNUserNotificationCenter.current().delegate = self
-                    print("✅ [BNotify] Delegate set after APNs registration")
-
-                    // Dynamically call replay if app delegate supports it
-                    if let delegate = UIApplication.shared.delegate,
-                       delegate.responds(to: Selector(("replayPendingAPNsCallbacks"))) {
-                        delegate.perform(Selector(("replayPendingAPNsCallbacks")))
-                    }
-                }
             }
         }
     }
