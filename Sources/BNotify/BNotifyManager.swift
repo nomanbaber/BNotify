@@ -51,6 +51,7 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
     }
 
     // MARK: - Register for Push Notifications
+    @MainActor
     public func registerForPushNotifications() {
         loadConfig()
 
@@ -80,9 +81,10 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
                     UNUserNotificationCenter.current().delegate = self
                     print("✅ [BNotify] Delegate set after APNs registration")
 
-                    // Replay any queued APNs callbacks from AppDelegate
-                    if let appDelegate = UIApplication.shared.delegate as? AppDelegate {
-                        appDelegate.replayPendingAPNsCallbacks()
+                    // Dynamically call replay if app delegate supports it
+                    if let delegate = UIApplication.shared.delegate,
+                       delegate.responds(to: Selector(("replayPendingAPNsCallbacks"))) {
+                        delegate.perform(Selector(("replayPendingAPNsCallbacks")))
                     }
                 }
             }
