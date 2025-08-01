@@ -49,7 +49,10 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
             return
         }
 
-        print("🛑 [BNotify] Safe mode: not calling APNs or delegate setup")
+        // Set delegate only
+        print("🔍 [BNotify] Setting delegate only")
+        UNUserNotificationCenter.current().delegate = self
+        print("✅ [BNotify] Delegate set successfully")
     }
 
 
