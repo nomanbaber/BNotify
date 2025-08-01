@@ -13,11 +13,16 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
     // MARK: - Singleton
     public static let shared = BNotifyManager()
 
+    // Property to check if manager is configured (for AppDelegate)
+    public static var sharedIsConfigured: Bool {
+        return BNotifyManager.shared.isConfigured
+    }
+
     // MARK: - Properties
     private var apiClient: APIClient?
     private var appId: String?
     private var baseURL: String?
-    private var isConfigured = false
+    internal var isConfigured = false
 
     // MARK: - Init
     private override init() {
@@ -46,7 +51,6 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
     }
 
     // MARK: - Register for Push Notifications
-    @MainActor
     public func registerForPushNotifications() {
         loadConfig()
 
@@ -75,11 +79,15 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                     UNUserNotificationCenter.current().delegate = self
                     print("✅ [BNotify] Delegate set after APNs registration")
+
+                    // Replay any queued APNs callbacks from AppDelegate
+                    if let appDelegate = UIApplication.shared.delegate as? AppDelegate {
+                        appDelegate.replayPendingAPNsCallbacks()
+                    }
                 }
             }
         }
     }
-
 
     // MARK: - APNs Callbacks
     public func didRegisterForRemoteNotifications(token: Data) {
