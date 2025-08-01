@@ -80,17 +80,17 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
         print("📲 [BNotify] Device Token: \(tokenString)")
 
         // Skip backend call if we detect dummy config
-        guard isConfigured,
-              let appId = appId,
-              appId != "app_12345",  // Detect test mode by APP_ID
-              let apiClient = apiClient else {
-            print("⚠️ [BNotify] Test mode detected - skipping backend API call")
-            return
-        }
-
-        // Send token only if config is valid
-        let request = DeviceTokenRequest(deviceToken: tokenString, platform: "iOS", appId: appId)
-        apiClient.sendDeviceToken(request)
+//        guard isConfigured,
+//              let appId = appId,
+//              appId != "app_12345",  // Detect test mode by APP_ID
+//              let apiClient = apiClient else {
+//            print("⚠️ [BNotify] Test mode detected - skipping backend API call")
+//            return
+//        }
+//
+//        // Send token only if config is valid
+//        let request = DeviceTokenRequest(deviceToken: tokenString, platform: "iOS", appId: appId)
+//        apiClient.sendDeviceToken(request)
     }
 
 
