@@ -56,10 +56,10 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
     public func registerForPushNotifications() {
 //        loadConfig()
 
-        guard isConfigured else {
-            print("❌ [BNotify] Config missing, cannot register")
-            return
-        }
+//        guard isConfigured else {
+//            print("❌ [BNotify] Config missing, cannot register")
+//            return
+//        }
 
         // Set delegate *after* registration to avoid race condition
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
