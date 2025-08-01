@@ -41,7 +41,6 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
         print("✅ [BNotify] Configuration loaded for APP_ID: \(appId)")
     }
 
-    // MARK: - Register for Push Notifications
     public func registerForPushNotifications() {
         loadConfig()
 
@@ -50,32 +49,9 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
             return
         }
 
-        // Delay delegate setup by 1 second to avoid race conditions
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            print("🔍 [BNotify] Setting delegate (delayed)")
-            UNUserNotificationCenter.current().delegate = self
-            print("✅ [BNotify] Delegate set safely")
-        }
-
-        // Request authorization
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            if let error = error {
-                print("❌ [BNotify] requestAuthorization error: \(error.localizedDescription)")
-            }
-
-            if !granted {
-                print("⚠️ [BNotify] Push notification permission denied by user")
-                return
-            }
-
-            // Delay APNs registration slightly
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                print("🔍 [BNotify] Calling registerForRemoteNotifications()")
-                UIApplication.shared.registerForRemoteNotifications()
-                print("✅ [BNotify] registerForRemoteNotifications() called")
-            }
-        }
+        print("🛑 [BNotify] Safe mode: not calling APNs or delegate setup")
     }
+
 
     // MARK: - APNs Callbacks
     public func didRegisterForRemoteNotifications(token: Data) {
