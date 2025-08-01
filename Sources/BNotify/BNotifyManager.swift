@@ -1,49 +1,46 @@
 import Foundation
 import UserNotifications
 import UIKit
-import CoreTelephony   // for device model (optional)
-import WebKit
-
-
-public protocol BNotifyDelegate: AnyObject {
-    /// Called when BNotify obtains the device token
-    func bNotify(didRegisterDeviceToken token: String)
-    /// Called if registration fails
-    func bNotify(didFailWithError error: Error)
-}
+import WebKit   // for userAgent extraction
 
 @MainActor
 public final class BNotifyManager {
     public static let shared = BNotifyManager()
     private init() {}
-    public weak var delegate: BNotifyDelegate?
 
-    private var appId: String?
+    // MARK: – Configured values
     private var baseURL: String?
     private var projectId: String?
+    private var appId: String?
     private var isConfigured = false
+
+    // MARK: – Lazy API client
     private var apiClient: APIClient?
 
+    // MARK: – Load the plist
     private func loadConfig() {
+        print("🔍 [BNotify] loadConfig()")
         guard
             let url  = Bundle.main.url(forResource: "PushNotificationConfig", withExtension: "plist"),
             let data = try? Data(contentsOf: url),
             let dict = try? PropertyListSerialization.propertyList(
                 from: data, options: [], format: nil
             ) as? [String: Any],
-            let base = dict["BASE_URL"] as? String,
-            let id   = dict["APP_ID"] as? String
+            let base      = dict["BASE_URL"]   as? String,
+            let project   = dict["PROJECT_ID"] as? String,
+            let app       = dict["APP_ID"]     as? String
         else {
             print("❌ [BNotify] Missing or invalid PushNotificationConfig.plist")
             return
         }
         baseURL     = base
-        appId       = id
+        projectId   = project
+        appId       = app
         isConfigured = true
-        print("✅ [BNotify] Configuration loaded for APP_ID: \(id)")
+        print("✅ [BNotify] Loaded BASE_URL: \(base), PROJECT_ID: \(project), APP_ID: \(app)")
     }
 
-    /// Call this from your app (e.g. in onAppear)
+    // MARK: – Public API
     public func registerForPushNotifications() {
         loadConfig()
         guard isConfigured else {
@@ -52,65 +49,65 @@ public final class BNotifyManager {
         }
 
         Task { @MainActor in
-            await requestPermissionAndRegister()
-        }
-    }
+            let center = UNUserNotificationCenter.current()
+            do {
+                let granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
+                print("🔍 [BNotify] Permission granted:", granted)
+                guard granted else { return }
 
-    @MainActor
-    private func requestPermissionAndRegister() async {
-        let center = UNUserNotificationCenter.current()
-        do {
-            let granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
-            print("🔍 [BNotify] Permission granted:", granted)
-            guard granted else {
-                print("⚠️ [BNotify] User denied push permission")
-                return
+                print("🔍 [BNotify] Registering with APNs…")
+                UIApplication.shared.registerForRemoteNotifications()
+            } catch {
+                print("❌ [BNotify] Authorization error:", error)
             }
-
-            print("🔍 [BNotify] Registering with APNs…")
-            UIApplication.shared.registerForRemoteNotifications()
-        } catch {
-            print("❌ [BNotify] Authorization error:", error)
         }
     }
 
-    /// Forward into this from your AppDelegate
+    // MARK: – APNs callback
     public func didRegisterForRemoteNotifications(token: Data) {
         let hexToken = token.map { String(format: "%02.2hhx", $0) }.joined()
         print("📲 [BNotify] Device Token:", hexToken)
 
-        guard let id       = appId,
-              let base     = baseURL,
-              let project  = projectId,   // assuming you loaded this from your plist
-              let bundleId = Bundle.main.bundleIdentifier
+        // ensure config values exist
+        guard
+            let base    = baseURL,
+            let project = projectId,
+            let app     = appId
         else {
-            print("⚠️ [BNotify] Missing config, skipping device registration")
+            print("❌ [BNotify] Missing config, cannot register device")
             return
         }
 
-        // 1) Build the request payload
-        let uuid    = UIDevice.current.identifierForVendor?.uuidString ?? ""
-        let os      = "iOS " + UIDevice.current.systemVersion
-        let device  = UIDevice.current.model
-        let screen  = "\(Int(UIScreen.main.bounds.width))x\(Int(UIScreen.main.bounds.height))"
-        let tz      = TimeZone.current.identifier
-        let cpu     = String(ProcessInfo.processInfo.processorCount)
-        let memGB   = String(Int(ProcessInfo.processInfo.physicalMemory / 1_073_741_824)) // GB
-        let locale  = Locale.current
+        // build the payload
+        let uuid   = UIDevice.current.identifierForVendor?.uuidString ?? ""
+        let os     = "iOS " + UIDevice.current.systemVersion
+        let device = UIDevice.current.model
+        let screen = "\(Int(UIScreen.main.bounds.width))x\(Int(UIScreen.main.bounds.height))"
+        let tz     = TimeZone.current.identifier
+        let cpu    = String(ProcessInfo.processInfo.processorCount)
+        let memGB  = String(Int(ProcessInfo.processInfo.physicalMemory / 1_073_741_824))
+        let locale = Locale.current
         let country = locale.regionCode ?? ""
-        let lang    = locale.languageCode ?? ""
+        let language = locale.languageCode ?? ""
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
-        let ua      = WKWebView().value(forKey: "userAgent") as? String ?? "Unknown"
-        let ip      = "0.0.0.0"    // placeholder (resolve via your own service)
-        let lat     = ""           // if you have CLLocation, inject here
-        let lng     = ""
+        let userAgent: String = {
+            let webView = WKWebView(frame: .zero)
+            var ua = "Unknown"
+            webView.evaluateJavaScript("navigator.userAgent") { result, _ in
+                if let s = result as? String { ua = s }
+            }
+            return ua
+        }()
+        let ip = "0.0.0.0"   // replace with your lookup if needed
+        let lat = ""
+        let lng = ""
 
         let req = DeviceRegistrationRequest(
             uuid: uuid,
             token: hexToken,
             project: project,
-            appId: id,
-            iosAppId: bundleId,
+            appId: app,
+            iosAppId: Bundle.main.bundleIdentifier ?? "",
             ip: ip,
             os: os,
             browser: "Safari",
@@ -120,30 +117,26 @@ public final class BNotifyManager {
             hardwareConcurrency: cpu,
             deviceMemory: memGB,
             platform: "ios",
-            userAgent: ua,
+            userAgent: userAgent,
             country: country,
-            language: lang,
+            language: language,
             version: version,
             lat: lat,
             lng: lng
         )
 
-        // 2) Lazily create the client and send
+        // lazy init client
         if apiClient == nil {
             apiClient = APIClient(
                 baseURL: base,
                 projectId: project,
-                appId: id
+                appId: app
             )
         }
         apiClient?.registerDevice(req)
     }
 
     public func didFailToRegisterForRemoteNotifications(error: Error) {
-        print("🔍 AppDelegate didFail — forwarding to SDK")
         print("❌ [BNotify] APNs registration failed:", error.localizedDescription)
-        
-        delegate?.bNotify(didFailWithError: error)
-
     }
 }
