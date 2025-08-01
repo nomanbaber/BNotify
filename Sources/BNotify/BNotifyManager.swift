@@ -49,9 +49,27 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
             return
         }
 
-        print("🔍 [BNotify] Calling registerForRemoteNotifications() only")
-        UIApplication.shared.registerForRemoteNotifications()
-        print("✅ [BNotify] registerForRemoteNotifications() called successfully")
+        // Set delegate first
+        UNUserNotificationCenter.current().delegate = self
+        print("✅ [BNotify] Delegate set successfully")
+
+        // Request permission and then register with APNs
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            if let error = error {
+                print("❌ [BNotify] requestAuthorization error: \(error.localizedDescription)")
+            }
+
+            if !granted {
+                print("⚠️ [BNotify] Push notification permission denied by user")
+                return
+            }
+
+            // Delay APNs registration slightly to avoid race
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                print("🔍 [BNotify] Calling registerForRemoteNotifications() after delegate setup")
+                UIApplication.shared.registerForRemoteNotifications()
+            }
+        }
     }
 
 
