@@ -6,23 +6,33 @@
 import Foundation
 import UserNotifications
 import UIKit
-
 @MainActor
 public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
 
-    // MARK: - Singleton (safe with @MainActor)
-    public static let shared: BNotifyManager = BNotifyManager()
+    // MARK: - Singleton (Main-thread safe)
+    public static var shared: BNotifyManager = {
+        if !Thread.isMainThread {
+            return DispatchQueue.main.sync {
+                return BNotifyManager()
+            }
+        }
+        return BNotifyManager()
+    }()
+    
+    
 
+    // MARK: - Properties
+    private var apiClient: APIClient?
+    private var appId: String?
+    private var isConfigured = false
+
+    // MARK: - Init
     private override init() {
         super.init()
         print("✅ [BNotify] BNotifyManager initialized")
     }
 
-    private var apiClient: APIClient?
-    private var appId: String?
-    private var isConfigured = false
-
-    // MARK: - Load Configuration
+    // MARK: - Load Config
     private func loadConfig() {
         print("🔍 [BNotify] loadConfig()")
 
@@ -41,6 +51,7 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
         print("✅ [BNotify] Configuration loaded for APP_ID: \(appId)")
     }
 
+    // MARK: - Register (Safe Mode for Debugging)
     public func registerForPushNotifications() {
         loadConfig()
 
@@ -49,60 +60,32 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
             return
         }
 
-        // Request permission first
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            if let error = error {
-                print("❌ [BNotify] requestAuthorization error: \(error.localizedDescription)")
-            }
-
-            if !granted {
-                print("⚠️ [BNotify] Push notification permission denied by user")
-                return
-            }
-
-            // Register with APNs
-            DispatchQueue.main.async {
-                print("🔍 [BNotify] Calling registerForRemoteNotifications()")
-                UIApplication.shared.registerForRemoteNotifications()
-
-                // Set delegate *after* APNs registration
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    UNUserNotificationCenter.current().delegate = self
-                    print("✅ [BNotify] Delegate set after APNs registration")
-                }
-            }
-        }
+        // Safe mode: do not call delegate or APNs yet
+        print("🛑 [BNotify] Safe mode: skipping delegate & APNs registration")
     }
-
-
 
     // MARK: - APNs Callbacks
     public func didRegisterForRemoteNotifications(token: Data) {
         let tokenString = token.map { String(format: "%02.2hhx", $0) }.joined()
         print("📲 [BNotify] Device Token: \(tokenString)")
 
-        // Skip backend call if we detect dummy config
-//        guard isConfigured,
-//              let appId = appId,
-//              appId != "app_12345",  // Detect test mode by APP_ID
-//              let apiClient = apiClient else {
-//            print("⚠️ [BNotify] Test mode detected - skipping backend API call")
-//            return
-//        }
-//
-//        // Send token only if config is valid
-//        let request = DeviceTokenRequest(deviceToken: tokenString, platform: "iOS", appId: appId)
-//        apiClient.sendDeviceToken(request)
+        // Skip backend calls if using dummy config
+        guard isConfigured,
+              let appId = appId,
+              appId != "app_12345",
+              let apiClient = apiClient else {
+            print("⚠️ [BNotify] Test mode detected - skipping backend API call")
+            return
+        }
+
+        let request = DeviceTokenRequest(deviceToken: tokenString, platform: "iOS", appId: appId)
+        apiClient.sendDeviceToken(request)
     }
-
-
-
 
     public func didFailToRegisterForRemoteNotifications(error: Error) {
         print("❌ [BNotify] Failed APNs registration: \(error.localizedDescription)")
     }
 
-    // MARK: - UNUserNotificationCenterDelegate
     // MARK: - UNUserNotificationCenterDelegate
     nonisolated public func userNotificationCenter(
         _ center: UNUserNotificationCenter,
@@ -121,5 +104,4 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
         print("🔔 [BNotify] didReceive notification: \(response.notification.request.identifier)")
         completionHandler()
     }
-
 }
