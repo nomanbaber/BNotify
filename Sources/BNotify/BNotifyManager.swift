@@ -79,14 +79,22 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
         let tokenString = token.map { String(format: "%02.2hhx", $0) }.joined()
         print("📲 [BNotify] Device Token: \(tokenString)")
 
-        guard isConfigured, let appId = appId, let apiClient = apiClient else {
-            print("❌ [BNotify] Cannot send token, SDK not configured")
+        // Skip backend call if we detect dummy config
+        guard isConfigured,
+              let appId = appId,
+              appId != "app_12345",  // Detect test mode by APP_ID
+              let apiClient = apiClient else {
+            print("⚠️ [BNotify] Test mode detected - skipping backend API call")
             return
         }
 
+        // Send token only if config is valid
         let request = DeviceTokenRequest(deviceToken: tokenString, platform: "iOS", appId: appId)
         apiClient.sendDeviceToken(request)
     }
+
+
+
 
     public func didFailToRegisterForRemoteNotifications(error: Error) {
         print("❌ [BNotify] Failed APNs registration: \(error.localizedDescription)")
