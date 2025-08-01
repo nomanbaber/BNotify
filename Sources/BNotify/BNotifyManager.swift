@@ -46,6 +46,7 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
     }
 
     // MARK: - Register for Push Notifications
+    @MainActor
     public func registerForPushNotifications() {
         loadConfig()
 
@@ -54,7 +55,7 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
             return
         }
 
-        // Request permission first
+        // Request permission
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
             if let error = error {
                 print("❌ [BNotify] requestAuthorization error: \(error.localizedDescription)")
@@ -70,7 +71,7 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
                 print("🔍 [BNotify] Calling registerForRemoteNotifications()")
                 UIApplication.shared.registerForRemoteNotifications()
 
-                // Set delegate after APNs registration to avoid pending callback crash
+                // Set delegate after APNs registration
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                     UNUserNotificationCenter.current().delegate = self
                     print("✅ [BNotify] Delegate set after APNs registration")
@@ -78,6 +79,7 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
             }
         }
     }
+
 
     // MARK: - APNs Callbacks
     public func didRegisterForRemoteNotifications(token: Data) {
