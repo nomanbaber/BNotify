@@ -49,10 +49,7 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
             return
         }
 
-        // Set delegate first
-        UNUserNotificationCenter.current().delegate = self
-        print("✅ [BNotify] Delegate set successfully")
-
+        // Request permission first
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
             if let error = error {
                 print("❌ [BNotify] requestAuthorization error: \(error.localizedDescription)")
@@ -63,9 +60,16 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
                 return
             }
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                print("🔍 [BNotify] Calling registerForRemoteNotifications() after delegate setup")
+            // Register with APNs
+            DispatchQueue.main.async {
+                print("🔍 [BNotify] Calling registerForRemoteNotifications()")
                 UIApplication.shared.registerForRemoteNotifications()
+
+                // Set delegate *after* APNs registration
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    UNUserNotificationCenter.current().delegate = self
+                    print("✅ [BNotify] Delegate set after APNs registration")
+                }
             }
         }
     }
