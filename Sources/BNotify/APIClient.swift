@@ -24,7 +24,7 @@ public class APIClient {
     }
 
     public func registerDevice(_ requestModel: DeviceRegistrationRequest) {
-        let endpoint = baseURL.appendingPathComponent("/api/devices/register")
+        let endpoint = baseURL.appendingPathComponent("api/devices/register")
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
