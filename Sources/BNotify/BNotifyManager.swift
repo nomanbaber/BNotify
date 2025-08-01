@@ -49,11 +49,11 @@ public final class BNotifyManager: NSObject, UNUserNotificationCenterDelegate {
             return
         }
 
-        // Set delegate only
-        print("🔍 [BNotify] Setting delegate only")
-        UNUserNotificationCenter.current().delegate = self
-        print("✅ [BNotify] Delegate set successfully")
+        print("🔍 [BNotify] Calling registerForRemoteNotifications() only")
+        UIApplication.shared.registerForRemoteNotifications()
+        print("✅ [BNotify] registerForRemoteNotifications() called successfully")
     }
+
 
 
     // MARK: - APNs Callbacks
