@@ -158,4 +158,24 @@ public final class BNotifyManager {
     public func didFailToRegisterForRemoteNotifications(error: Error) {
         print("❌ [BNotify] APNs registration failed:", error.localizedDescription)
     }
+    
+    
+    
+      
+      func trackEvent(type: String, userInfo: [AnyHashable: Any], actionId: String? = nil) {
+           
+          let nid = userInfo["bn_id"] as? String ?? userInfo["id"] as? String
+          apiClient?.postEvent(type: type, notificationId: nid, actionId: actionId)
+      }
+      
+      func registerCategories() {
+          let openAction = UNNotificationAction(identifier: "OPEN", title: "Open", options: [.foreground])
+          let category = UNNotificationCategory(
+              identifier: "bnotify",
+              actions: [openAction],
+              intentIdentifiers: [],
+              options: [.customDismissAction]
+          )
+          UNUserNotificationCenter.current().setNotificationCategories([category])
+      }
 }

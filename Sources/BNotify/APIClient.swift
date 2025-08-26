@@ -62,4 +62,26 @@ public class APIClient {
             }
         }.resume()
     }
+    
+    func postEvent(type: String, notificationId: String?, actionId: String?) {
+        let event = BNotifyEvent(
+            eventType: type,
+            notificationId: notificationId
+//            actionId: actionId,
+//            timestamp: Int64(Date().timeIntervalSince1970 * 1000),
+//            appId: appId
+        )
+        
+        guard let url = URL(string: "/api/notifications/track-event", relativeTo: baseURL) else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONEncoder().encode(event)
+        
+        URLSession.shared.dataTask(with: request).resume()
+    }
+    
 }
+ 
+ 
