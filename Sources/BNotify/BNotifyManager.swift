@@ -168,7 +168,7 @@ public final class BNotifyManager {
           apiClient?.postEvent(type: type, notificationId: nid, actionId: actionId)
       }
       
-      func registerCategories() {
+     public func registerCategories() {
           let openAction = UNNotificationAction(identifier: "OPEN", title: "Open", options: [.foreground])
           let category = UNNotificationCategory(
               identifier: "bnotify",
