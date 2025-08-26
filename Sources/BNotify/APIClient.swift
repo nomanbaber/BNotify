@@ -67,20 +67,43 @@ public class APIClient {
         let event = BNotifyEvent(
             eventType: type,
             notificationId: notificationId
-//            actionId: actionId,
-//            timestamp: Int64(Date().timeIntervalSince1970 * 1000),
-//            appId: appId
+            // actionId: actionId,
+            // timestamp: Int64(Date().timeIntervalSince1970 * 1000),
+            // appId: appId
         )
         
-        guard let url = URL(string: "/api/notifications/track-event", relativeTo: baseURL) else { return }
+        guard let url = URL(string: "/api/notifications/track-event", relativeTo: baseURL) else {
+            print("❌ [BNotify] Invalid URL for track-event")
+            return
+        }
+        
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONEncoder().encode(event)
         
-        URLSession.shared.dataTask(with: request).resume()
+        // 🔍 Log outgoing event
+        if let body = request.httpBody, let json = String(data: body, encoding: .utf8) {
+            print("📤 [BNotify] Sending event → \(url.absoluteString)\n\(json)")
+        }
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ [BNotify] Event POST failed:", error.localizedDescription)
+                return
+            }
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                print("📥 [BNotify] Event response status:", httpResponse.statusCode)
+            }
+            
+            if let data = data, let str = String(data: data, encoding: .utf8) {
+                print("📥 [BNotify] Event response body:\n\(str)")
+            }
+        }.resume()
     }
+
     
 }
  
