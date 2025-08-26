@@ -164,6 +164,9 @@ public final class BNotifyManager {
       
     public func trackEvent(type: String, userInfo: [AnyHashable: Any], actionId: String? = nil) {
            
+        
+        print("userInfo received:" , userInfo)
+          
           let nid = userInfo["bn_id"] as? String ?? userInfo["id"] as? String
           apiClient?.postEvent(type: type, notificationId: nid, actionId: actionId)
       }
