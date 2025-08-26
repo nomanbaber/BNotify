@@ -65,8 +65,8 @@ public class APIClient {
     
     func postEvent(type: String, notificationId: String?, actionId: String?) {
         let event = BNotifyEvent(
-            eventType: type,
-            notificationId: notificationId
+            eventType: "received",
+            notificationId: "1231233231"
             // actionId: actionId,
             // timestamp: Int64(Date().timeIntervalSince1970 * 1000),
             // appId: appId
@@ -82,6 +82,8 @@ public class APIClient {
         request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONEncoder().encode(event)
+        
+        
         
         // 🔍 Log outgoing event
         if let body = request.httpBody, let json = String(data: body, encoding: .utf8) {
