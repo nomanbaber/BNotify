@@ -10,5 +10,6 @@ import Foundation
 struct BNotifyEvent: Codable {
     let eventType: String
     let notificationId: String?
-   
+    let token: String?
+
 }

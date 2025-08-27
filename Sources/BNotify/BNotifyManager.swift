@@ -166,6 +166,7 @@ public final class BNotifyManager {
            
         
         var nid: String? = nil
+        var Dtoken: String? = nil
 
             // 1. Top-level
             if let top = userInfo["notificationId"] as? String {
@@ -176,10 +177,19 @@ public final class BNotifyManager {
                     let apsNid = aps["notificationId"] as? String {
                 nid = apsNid
             }
+        
+        if let token = userInfo["token"] as? String {
+            Dtoken = token
+        }
+        // 2. Inside aps
+        else if let aps = userInfo["aps"] as? [String: Any],
+                let apsToken = aps["token"] as? String {
+            Dtoken = apsToken
+        }
 
         print("📌 Extracted notificationId:", nid ?? "nil");
         
-        apiClient?.postEvent(type: type, notificationId: nid, actionId: actionId)
+        apiClient?.postEvent(type: type, notificationId: nid, actionId: actionId , token: Dtoken)
       }
       
      public func registerCategories() {

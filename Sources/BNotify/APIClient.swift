@@ -63,10 +63,11 @@ public class APIClient {
         }.resume()
     }
     
-    func postEvent(type: String, notificationId: String?, actionId: String?) {
+    func postEvent(type: String, notificationId: String?, actionId: String? , token: String? ) {
         let event = BNotifyEvent(
             eventType: type,
-            notificationId: notificationId
+            notificationId: notificationId,
+            token: token
             // actionId: actionId,
             // timestamp: Int64(Date().timeIntervalSince1970 * 1000),
             // appId: appId
