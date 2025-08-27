@@ -165,10 +165,21 @@ public final class BNotifyManager {
     public func trackEvent(type: String, userInfo: [AnyHashable: Any], actionId: String? = nil) {
            
         
-        print("userInfo received:" , userInfo)
-          
-          let nid = userInfo["bn_id"] as? String ?? userInfo["id"] as? String
-          apiClient?.postEvent(type: type, notificationId: nid, actionId: actionId)
+        var nid: String? = nil
+
+            // 1. Top-level
+            if let top = userInfo["notificationId"] as? String {
+                nid = top
+            }
+            // 2. Inside aps
+            else if let aps = userInfo["aps"] as? [String: Any],
+                    let apsNid = aps["notificationId"] as? String {
+                nid = apsNid
+            }
+
+        print("📌 Extracted notificationId:", nid ?? "nil");
+        
+        apiClient?.postEvent(type: type, notificationId: nid, actionId: actionId)
       }
       
      public func registerCategories() {
