@@ -8,10 +8,70 @@
 import Foundation
 import UserNotifications
 import UIKit
-import WebKit   // for userAgent extraction
+import WebKit   // for userAgent extraction (unused in NSE code paths)
+
+// MARK: - Extension-safe helper (call this from your NSE)
+public enum BNotifyExtensionSafe {
+    /// Post a "delivered" event from either the main app or a Notification Service Extension.
+    /// - Note: Reads PushNotificationConfig.plist from the **current target's** bundle (works in NSE).
+    public static func trackDeliveredEvent(from userInfo: [AnyHashable: Any],
+                                           plistName: String = "PushNotificationConfig") {
+        // Extract notificationId (top-level or inside aps)
+        let nid = (userInfo["notificationId"] as? String)
+            ?? ((userInfo["aps"] as? [String: Any])?["notificationId"] as? String)
+
+        // Load config from this bundle (NSE has its own bundle)
+        guard
+            let cfgURL  = Bundle.main.url(forResource: plistName, withExtension: "plist"),
+            let data    = try? Data(contentsOf: cfgURL),
+            let dict    = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
+            let baseStr = dict["BASE_URL"]   as? String,
+            let key     = dict["API_KEY"]    as? String,
+            let baseURL = URL(string: baseStr),
+            let url     = URL(string: "/api/notifications/track-event", relativeTo: baseURL)
+        else {
+            #if DEBUG
+            print("❌ [BNotify] Missing/invalid \(plistName).plist in current target (app or NSE)")
+            #endif
+            return
+        }
+
+        // Build tiny payload
+        var body: [String: Any] = ["eventType": "delivered"]
+        if let nid { body["notificationId"] = nid }
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.addValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        req.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = 8
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body, options: [])
+
+        // Extension-safe session (no keychain/cookies/background tasks)
+        URLSession(configuration: .ephemeral).dataTask(with: req) { data, resp, err in
+            #if DEBUG
+            if let err = err {
+                print("❌ [BNotify] NSE delivered POST error:", err.localizedDescription)
+            } else if let http = resp as? HTTPURLResponse {
+                print("📥 [BNotify] NSE delivered status:", http.statusCode)
+                if let data, let s = String(data: data, encoding: .utf8), !s.isEmpty {
+                    print("📥 [BNotify] NSE delivered body:\n\(s)")
+                }
+            }
+            #endif
+        }.resume()
+    }
+}
 
 @MainActor
 public final class BNotifyManager {
+
+    // If you ever want to call from NSE without importing BNotifyExtensionSafe directly,
+    // you can still expose a proxy. But DO NOT call app-only code here.
+    public static func trackDeliveredEvent(from userInfo: [AnyHashable: Any]) {
+        BNotifyExtensionSafe.trackDeliveredEvent(from: userInfo)
+    }
+
     public static let shared = BNotifyManager()
     private init() {}
 
@@ -158,48 +218,67 @@ public final class BNotifyManager {
     public func didFailToRegisterForRemoteNotifications(error: Error) {
         print("❌ [BNotify] APNs registration failed:", error.localizedDescription)
     }
-    
-    
-    
-      
-    public func trackEvent(type: String, userInfo: [AnyHashable: Any], actionId: String? = nil) {
-           
-        
-        var nid: String? = nil
-        var Dtoken: String? = nil
 
-            // 1. Top-level
-            if let top = userInfo["notificationId"] as? String {
-                nid = top
-            }
-            // 2. Inside aps
-            else if let aps = userInfo["aps"] as? [String: Any],
-                    let apsNid = aps["notificationId"] as? String {
-                nid = apsNid
-            }
-        
+    // MARK: – Analytics
+
+    public func trackEvent(type: String,
+                           userInfo: [AnyHashable: Any],
+                           actionId: String? = nil) {
+
+        // Extract notificationId
+        var nid: String? = nil
+        if let top = userInfo["notificationId"] as? String {
+            nid = top
+        } else if let aps = userInfo["aps"] as? [String: Any],
+                  let apsNid = aps["notificationId"] as? String {
+            nid = apsNid
+        }
+
+        // Optional token passthrough (if you include it)
+        var Dtoken: String? = nil
         if let token = userInfo["token"] as? String {
             Dtoken = token
-        }
-        // 2. Inside aps
-        else if let aps = userInfo["aps"] as? [String: Any],
-                let apsToken = aps["token"] as? String {
+        } else if let aps = userInfo["aps"] as? [String: Any],
+                  let apsToken = aps["token"] as? String {
             Dtoken = apsToken
         }
 
-        print("📌 Extracted notificationId:", nid ?? "nil");
-        
-        apiClient?.postEvent(type: type, notificationId: nid, actionId: actionId , token: Dtoken)
-      }
-      
-     public func registerCategories() {
-          let openAction = UNNotificationAction(identifier: "OPEN", title: "Open", options: [.foreground])
-          let category = UNNotificationCategory(
-              identifier: "bnotify",
-              actions: [openAction],
-              intentIdentifiers: [],
-              options: [.customDismissAction]
-          )
-          UNUserNotificationCenter.current().setNotificationCategories([category])
-      }
+        print("📌 [BNotify] Extracted notificationId:", nid ?? "nil")
+
+        apiClient?.postEvent(type: type, notificationId: nid, actionId: actionId, token: Dtoken)
+    }
+
+    public func registerCategories() {
+        let openAction = UNNotificationAction(identifier: "OPEN", title: "Open", options: [.foreground])
+        let category = UNNotificationCategory(
+            identifier: "bnotify",
+            actions: [openAction],
+            intentIdentifiers: [],
+            options: [.customDismissAction]
+        )
+        UNUserNotificationCenter.current().setNotificationCategories([category])
+    }
+
+    // MARK: – Helpers (app-only)
+    // Keep app alive briefly for the network call (not used in NSE)
+    private func withBGTask(_ name: String = "bnotify.trackEvent", _ work: (@escaping () -> Void) -> Void) {
+        var bgTask: UIBackgroundTaskIdentifier = .invalid
+        bgTask = UIApplication.shared.beginBackgroundTask(withName: name) {
+            UIApplication.shared.endBackgroundTask(bgTask); bgTask = .invalid
+        }
+        work {
+            if bgTask != .invalid {
+                UIApplication.shared.endBackgroundTask(bgTask); bgTask = .invalid
+            }
+        }
+    }
+
+    // Ensure plist/client are ready even on cold start (app)
+    private func ensureConfigured() {
+        if !isConfigured { loadConfig() }
+        if apiClient == nil,
+           let base = baseURL, let project = projectId, let app = appId, let key = apiKey {
+            apiClient = APIClient(baseURL: base, projectId: project, appId: app, apiKey: key)
+        }
+    }
 }
