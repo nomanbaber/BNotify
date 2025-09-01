@@ -25,8 +25,8 @@ public enum BNotifyExtensionSafe {
             let cfgURL  = Bundle.main.url(forResource: plistName, withExtension: "plist"),
             let data    = try? Data(contentsOf: cfgURL),
             let dict    = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
-            let baseStr = dict["BASE_URL"]   as? String,
-            let key     = dict["API_KEY"]    as? String,
+            let baseStr = "https://bnotify.convexinteractive.com:4433"   as? String,
+            let key     = "68b0591c9d207122c33c72f8"    as? String,
             let baseURL = URL(string: baseStr),
             let url     = URL(string: "/api/notifications/track-event", relativeTo: baseURL)
         else {
@@ -37,7 +37,7 @@ public enum BNotifyExtensionSafe {
         }
 
         // Build tiny payload
-        var body: [String: Any] = ["eventType": "delivered"]
+        var body: [String: Any] = ["eventType": "received"]
         if let nid { body["notificationId"] = nid }
 
         var req = URLRequest(url: url)
