@@ -547,3 +547,42 @@ public final class BNotifyManager {
         }
     }
 }
+
+// MARK: – Example AppDelegate integration
+/*
+ // Add this to your AppDelegate.swift:
+ 
+ // MARK: – Tap / Dismiss / Action
+ func userNotificationCenter(_ center: UNUserNotificationCenter,
+ didReceive response: UNNotificationResponse,
+ withCompletionHandler completionHandler: @escaping () -> Void) {
+ let userInfo = response.notification.request.content.userInfo
+ 
+ if let data = try? JSONSerialization.data(withJSONObject: userInfo, options: .prettyPrinted),
+ let json = String(data: data, encoding: .utf8) {
+ print("📬 didReceive response payload:\n\(json)")
+ } else {
+ print("📬 didReceive response payload:", userInfo)
+ }
+ 
+ var type = "clicked"
+ var actionId = "clicked"
+ 
+ if response.actionIdentifier == UNNotificationDismissActionIdentifier {
+ type = "dismissed"
+ actionId = "dismiss"
+ } else if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
+ type = "clicked"
+ actionId = "clicked"
+ } else {
+ // Custom action (if you have any)
+ type = "action"
+ actionId = response.actionIdentifier
+ }
+ 
+ // 🔹 Track notification interaction
+ BNotifyManager.shared.trackEvent(type: type, userInfo: userInfo, actionId: actionId)
+ 
+ completionHandler()
+ }
+ */

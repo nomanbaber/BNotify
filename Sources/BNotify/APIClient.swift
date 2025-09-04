@@ -78,20 +78,42 @@ public class APIClient {
 
         guard let url = URL(string: "/api/notifications/track-event", relativeTo: baseURL) else {
             print("❌ [BNotify] Invalid URL for track-event")
-            completion?(); return
+            DispatchQueue.main.async {
+                completion?()
+            }
+            return
         }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONEncoder().encode(event)
+        
+        do {
+            request.httpBody = try JSONEncoder().encode(event)
+        } catch {
+            print("❌ [BNotify] Failed to encode event: \(error)")
+            DispatchQueue.main.async {
+                completion?()
+            }
+            return
+        }
 
         URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error { print("❌ [BNotify] Event POST failed:", error.localizedDescription) }
-            if let http = response as? HTTPURLResponse { print("📥 [BNotify] Event response status:", http.statusCode) }
-            if let data = data, let str = String(data: data, encoding: .utf8) { print("📥 [BNotify] Event response body:\n\(str)") }
-            completion?()
+            if let error = error {
+                print("❌ [BNotify] Event POST failed:", error.localizedDescription)
+            }
+            if let http = response as? HTTPURLResponse {
+                print("📥 [BNotify] Event response status:", http.statusCode)
+            }
+            if let data = data, let str = String(data: data, encoding: .utf8) {
+                print("📥 [BNotify] Event response body:\n\(str)")
+            }
+            
+            // Always call completion on main thread to prevent crashes
+            DispatchQueue.main.async {
+                completion?()
+            }
         }.resume()
     }
 
@@ -106,35 +128,35 @@ public class APIClient {
 //            // timestamp: Int64(Date().timeIntervalSince1970 * 1000),
 //            // appId: appId
 //        )
-//        
+//
 //        guard let url = URL(string: "/api/notifications/track-event", relativeTo: baseURL) else {
 //            print("❌ [BNotify] Invalid URL for track-event")
 //            return
 //        }
-//        
+//
 //        var request = URLRequest(url: url)
 //        request.httpMethod = "POST"
 //        request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 //        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
 //        request.httpBody = try? JSONEncoder().encode(event)
-//        
-//        
-//        
+//
+//
+//
 //        // 🔍 Log outgoing event
 //        if let body = request.httpBody, let json = String(data: body, encoding: .utf8) {
 //            print("📤 [BNotify] Sending event → \(url.absoluteString)\n\(json)")
 //        }
-//        
+//
 //        URLSession.shared.dataTask(with: request) { data, response, error in
 //            if let error = error {
 //                print("❌ [BNotify] Event POST failed:", error.localizedDescription)
 //                return
 //            }
-//            
+//
 //            if let httpResponse = response as? HTTPURLResponse {
 //                print("📥 [BNotify] Event response status:", httpResponse.statusCode)
 //            }
-//            
+//
 //            if let data = data, let str = String(data: data, encoding: .utf8) {
 //                print("📥 [BNotify] Event response body:\n\(str)")
 //            }
@@ -142,5 +164,3 @@ public class APIClient {
 //    }
     
 }
- 
- 
