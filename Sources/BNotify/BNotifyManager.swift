@@ -37,7 +37,7 @@ struct BNotifyConfig {
 
 // MARK: - App Group Log Helper
 private extension BNotifyExtensionSafe {
-    static let appGroupId = "group.com.yourcompany.bnotify" // <-- CHANGE to your App Group ID
+    static let appGroupId = "com.bnotify.convex.testing.BNotifyClient" // <-- CHANGE to your App Group ID
     static let logFileName = "bnotify_nse_api_log.txt"
     
     static func appendToLog(_ message: String) {
