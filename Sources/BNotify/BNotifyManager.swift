@@ -10,133 +10,32 @@ import UserNotifications
 import UIKit
 import WebKit   // for userAgent extraction (unused in NSE code paths)
 
-// MARK: - Shared config loader
-struct BNotifyConfig {
-    let baseURL: String
-    let apiKey: String
-    let projectId: String?
-    let appId: String?
-    let appGroupId: String? // Add App Group ID to config
-    
-    static func load(fromBundle bundle: Bundle = .main, plistName: String = "PushNotificationConfig") -> BNotifyConfig? {
-        guard
-            let url = bundle.url(forResource: plistName, withExtension: "plist"),
-            let data = try? Data(contentsOf: url),
-            let dict = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
-            let base = dict["BASE_URL"] as? String,
-            let key = dict["API_KEY"] as? String
-        else {
-            #if DEBUG
-            print("❌ [BNotify] Missing/invalid \(plistName).plist in current target (app or NSE)")
-            #endif
-            return nil
-        }
-        let project = dict["PROJECT_ID"] as? String
-        let app = dict["APP_ID"] as? String
-        let appGroup = dict["APP_GROUP_ID"] as? String // Read from plist
-        return BNotifyConfig(baseURL: base, apiKey: key, projectId: project, appId: app, appGroupId: appGroup)
-    }
-}
-
-// MARK: - App Group Log Helper
-private extension BNotifyExtensionSafe {
-    static func getAppGroupId(from config: BNotifyConfig?, fallback: String? = nil) -> String? {
-        return config?.appGroupId ?? fallback ?? "group.com.bnotify.convex.testing.BNotifyClient"
-    }
-    
-    static let logFileName = "bnotify_nse_api_log.txt"
-    
-    static func appendToLog(_ message: String, appGroupId: String? = nil) {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
-        let timestamp = formatter.string(from: Date())
-        
-        // Use provided appGroupId or try to load from config
-        let groupId: String
-        if let providedId = appGroupId {
-            groupId = providedId
-        } else if let config = BNotifyConfig.load(), let configGroupId = config.appGroupId {
-            groupId = configGroupId
-        } else {
-            groupId = "group.com.bnotify.convex.testing.BNotifyClient" // Updated fallback
-        }
-        
-        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupId) else {
-            print("❌ [BNotify] Could not access App Group container: \(groupId)")
-            return
-        }
-        
-        print("✅ [BNotify] App Group container found at: \(containerURL.path)")
-        
-        let logURL = containerURL.appendingPathComponent(logFileName)
-        let logMsg = "[\(timestamp)] \(message)\n"
-        
-        do {
-            if FileManager.default.fileExists(atPath: logURL.path) {
-                let handle = try FileHandle(forWritingTo: logURL)
-                handle.seekToEndOfFile()
-                if let data = logMsg.data(using: String.Encoding.utf8) {
-                    handle.write(data)
-                }
-                handle.closeFile()
-                print("✅ [BNotify] Appended to existing log file")
-            } else {
-                try logMsg.write(to: logURL, atomically: true, encoding: String.Encoding.utf8)
-                print("✅ [BNotify] Created new log file at: \(logURL.path)")
-            }
-        } catch {
-            print("❌ [BNotify] Failed to write to log file: \(error)")
-        }
-    }
-}
-
 // MARK: - Extension-safe helper (call this from your NSE)
 public enum BNotifyExtensionSafe {
     /// Post a "delivered" event from either the main app or a Notification Service Extension.
     /// - Note: Reads PushNotificationConfig.plist from the **current target's** bundle (works in NSE).
     public static func trackDeliveredEvent(from userInfo: [AnyHashable: Any],
-                                           plistName: String = "PushNotificationConfig",
-                                           appGroupId: String? = nil) {
-        
-        print("🚀 [BNotify] trackDeliveredEvent called with userInfo keys: \(Array(userInfo.keys))")
-        appendToLog("🚀 trackDeliveredEvent called with userInfo: \(userInfo)", appGroupId: appGroupId)
-        
+                                           plistName: String = "PushNotificationConfig") {
         // Extract notificationId (top-level or inside aps)
         let nid = (userInfo["notificationId"] as? String)
             ?? ((userInfo["aps"] as? [String: Any])?["notificationId"] as? String)
-        
-        print("🔍 [BNotify] Extracted notificationId: \(nid ?? "nil")")
-        appendToLog("🔍 Extracted notificationId: \(nid ?? "nil")", appGroupId: appGroupId)
 
-        // Load config using shared loader
-        print("🔍 [BNotify] Loading config from plist: \(plistName)")
-        appendToLog("🔍 Loading config from plist: \(plistName)", appGroupId: appGroupId)
-        
-        guard let config = BNotifyConfig.load(fromBundle: .main, plistName: plistName) else {
-            let msg = "❌ Failed to load config from \(plistName).plist"
-            print("❌ [BNotify] \(msg)")
-            appendToLog(msg, appGroupId: appGroupId)
+        // Load config from this bundle (NSE has its own bundle)
+        guard
+            let cfgURL  = Bundle.main.url(forResource: plistName, withExtension: "plist"),
+            let data    = try? Data(contentsOf: cfgURL),
+            let dict    = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
+            let baseStr = dict["BASE_URL"]   as? String,
+            let key     = dict["API_KEY"]    as? String,
+            let baseURL = URL(string: baseStr),
+            let url     = URL(string: "/api/notifications/track-event", relativeTo: baseURL)
+        else {
+            #if DEBUG
+            print("❌ [BNotify] Missing/invalid \(plistName).plist in current target (app or NSE)")
+            #endif
             return
         }
-        
-        guard let baseURL = URL(string: config.baseURL) else {
-            let msg = "❌ Invalid BASE_URL: \(config.baseURL)"
-            print("❌ [BNotify] \(msg)")
-            appendToLog(msg, appGroupId: appGroupId)
-            return
-        }
-        
-        guard let url = URL(string: "/api/notifications/track-event", relativeTo: baseURL) else {
-            let msg = "❌ Failed to create API URL"
-            print("❌ [BNotify] \(msg)")
-            appendToLog(msg, appGroupId: appGroupId)
-            return
-        }
-        
-        print("✅ [BNotify] Config loaded successfully. API URL: \(url)")
-        appendToLog("✅ Config loaded successfully. API URL: \(url)", appGroupId: appGroupId)
-        
-        let key = config.apiKey
+
         // Build tiny payload
         var body: [String: Any] = ["eventType": "received"]
         if let nid { body["notificationId"] = nid }
@@ -146,92 +45,21 @@ public enum BNotifyExtensionSafe {
         req.addValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         req.addValue("application/json", forHTTPHeaderField: "Content-Type")
         req.timeoutInterval = 8
-        
-        do {
-            req.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
-            print("✅ [BNotify] Request body created: \(body)")
-            appendToLog("✅ Request body created: \(body)", appGroupId: appGroupId)
-        } catch {
-            let msg = "❌ Failed to serialize request body: \(error)"
-            print("❌ [BNotify] \(msg)")
-            appendToLog(msg, appGroupId: appGroupId)
-            return
-        }
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body, options: [])
 
-        print("🌐 [BNotify] Starting API request to: \(url)")
-        appendToLog("🌐 Starting API request to: \(url)", appGroupId: appGroupId)
-        
         // Extension-safe session (no keychain/cookies/background tasks)
         URLSession(configuration: .ephemeral).dataTask(with: req) { data, resp, err in
+            #if DEBUG
             if let err = err {
-                let msg = "❌ [BNotify] NSE delivered POST error: \(err.localizedDescription)"
-                print(msg)
-                appendToLog(msg, appGroupId: appGroupId)
+                print("❌ [BNotify] NSE delivered POST error:", err.localizedDescription)
             } else if let http = resp as? HTTPURLResponse {
-                var msg = "📥 [BNotify] NSE delivered status: \(http.statusCode)"
+                print("📥 [BNotify] NSE delivered status:", http.statusCode)
                 if let data, let s = String(data: data, encoding: .utf8), !s.isEmpty {
-                    msg += "\n📥 [BNotify] NSE delivered body:\n\(s)"
+                    print("📥 [BNotify] NSE delivered body:\n\(s)")
                 }
-                print(msg)
-                appendToLog(msg, appGroupId: appGroupId)
-            } else {
-                let msg = "❓ [BNotify] Unexpected response type"
-                print(msg)
-                appendToLog(msg, appGroupId: appGroupId)
             }
+            #endif
         }.resume()
-    }
-    
-    /// Helper function to read the NSE log file from the main app
-    public static func readNSELog(appGroupId: String? = nil) -> String? {
-        // Use provided appGroupId or try to load from config
-        let groupId: String
-        if let providedId = appGroupId {
-            groupId = providedId
-        } else if let config = BNotifyConfig.load(), let configGroupId = config.appGroupId {
-            groupId = configGroupId
-        } else {
-            groupId = "group.com.bnotify.convex.testing.BNotifyClient" // fallback
-        }
-        
-        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupId) else {
-            print("❌ [BNotify] Could not access App Group container: \(groupId)")
-            return nil
-        }
-        
-        let logURL = containerURL.appendingPathComponent(logFileName)
-        
-        guard FileManager.default.fileExists(atPath: logURL.path) else {
-            print("❌ [BNotify] Log file does not exist at: \(logURL.path)")
-            return nil
-        }
-        
-        do {
-            let content = try String(contentsOf: logURL)
-            print("✅ [BNotify] Successfully read log file (\(content.count) characters)")
-            return content
-        } catch {
-            print("❌ [BNotify] Failed to read log file: \(error)")
-            return nil
-        }
-    }
-    
-    /// Helper function to clear the NSE log file
-    public static func clearNSELog(appGroupId: String? = nil) {
-        // Use provided appGroupId or try to load from config
-        let groupId: String
-        if let providedId = appGroupId {
-            groupId = providedId
-        } else if let config = BNotifyConfig.load(), let configGroupId = config.appGroupId {
-            groupId = configGroupId
-        } else {
-            groupId = "group.com.bnotify.convex.testing.BNotifyClient" // fallback
-        }
-        
-        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupId) else { return }
-        let logURL = containerURL.appendingPathComponent(logFileName)
-        try? FileManager.default.removeItem(at: logURL)
-        print("🗑️ [BNotify] Cleared NSE log file")
     }
 }
 
@@ -260,21 +88,32 @@ public final class BNotifyManager {
     // MARK: – Load the plist
     private func loadConfig() {
         print("🔍 [BNotify] loadConfig()")
-        guard let config = BNotifyConfig.load() else {
+        guard
+            let url  = Bundle.main.url(forResource: "PushNotificationConfig", withExtension: "plist"),
+            let data = try? Data(contentsOf: url),
+            let dict = try? PropertyListSerialization.propertyList(
+                from: data, options: [], format: nil
+            ) as? [String: Any],
+            let base      = dict["BASE_URL"]   as? String,
+            let project   = dict["PROJECT_ID"] as? String,
+            let app       = dict["APP_ID"]     as? String,
+            let key       = dict["API_KEY"]    as? String
+        else {
             print("❌ [BNotify] Missing or invalid PushNotificationConfig.plist")
             return
         }
-        baseURL     = config.baseURL
-        projectId   = config.projectId
-        appId       = config.appId
-        apiKey      = config.apiKey
+        baseURL     = base
+        projectId   = project
+        appId       = app
+        apiKey      = key
         isConfigured = true
+
         print("""
             ✅ [BNotify] Loaded:
-               • BASE_URL:   \(config.baseURL)
-               • PROJECT_ID: \(config.projectId ?? "nil")
-               • APP_ID:     \(config.appId ?? "nil")
-               • API_KEY:    \(String(config.apiKey.prefix(8)))…\(String(config.apiKey.suffix(4)))
+               • BASE_URL:   \(base)
+               • PROJECT_ID: \(project)
+               • APP_ID:     \(app)
+               • API_KEY:    \(String(key.prefix(8)))…\(String(key.suffix(4)))
             """)
     }
 
@@ -441,15 +280,5 @@ public final class BNotifyManager {
            let base = baseURL, let project = projectId, let app = appId, let key = apiKey {
             apiClient = APIClient(baseURL: base, projectId: project, appId: app, apiKey: key)
         }
-    }
-    
-    /// Helper function to read NSE logs from the main app
-    public func readNSELogs() -> String? {
-        return BNotifyExtensionSafe.readNSELog()
-    }
-    
-    /// Helper function to clear NSE logs from the main app
-    public func clearNSELogs() {
-        BNotifyExtensionSafe.clearNSELog()
     }
 }
