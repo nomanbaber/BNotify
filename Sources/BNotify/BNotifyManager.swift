@@ -39,16 +39,37 @@ struct BNotifyConfig {
 private extension BNotifyExtensionSafe {
     static let appGroupId = "group.com.yourcompany.bnotify" // <-- CHANGE to your App Group ID
     static let logFileName = "bnotify_nse_api_log.txt"
+    
     static func appendToLog(_ message: String) {
-        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupId) else { return }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+        let timestamp = formatter.string(from: Date())
+        
+        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupId) else {
+            print("❌ [BNotify] Could not access App Group container: \(appGroupId)")
+            return
+        }
+        
+        print("✅ [BNotify] App Group container found at: \(containerURL.path)")
+        
         let logURL = containerURL.appendingPathComponent(logFileName)
-        let logMsg = "[\(Date())] \(message)\n"
-        if let handle = try? FileHandle(forWritingTo: logURL) {
-            handle.seekToEndOfFile()
-            if let data = logMsg.data(using: .utf8) { handle.write(data) }
-            handle.closeFile()
-        } else {
-            try? logMsg.write(to: logURL, atomically: true, encoding: .utf8)
+        let logMsg = "[\(timestamp)] \(message)\n"
+        
+        do {
+            if FileManager.default.fileExists(atPath: logURL.path) {
+                let handle = try FileHandle(forWritingTo: logURL)
+                handle.seekToEndOfFile()
+                if let data = logMsg.data(using: String.Encoding.utf8) {
+                    handle.write(data)
+                }
+                handle.closeFile()
+                print("✅ [BNotify] Appended to existing log file")
+            } else {
+                try logMsg.write(to: logURL, atomically: true, encoding: String.Encoding.utf8)
+                print("✅ [BNotify] Created new log file at: \(logURL.path)")
+            }
+        } catch {
+            print("❌ [BNotify] Failed to write to log file: \(error)")
         }
     }
 }
@@ -59,17 +80,45 @@ public enum BNotifyExtensionSafe {
     /// - Note: Reads PushNotificationConfig.plist from the **current target's** bundle (works in NSE).
     public static func trackDeliveredEvent(from userInfo: [AnyHashable: Any],
                                            plistName: String = "PushNotificationConfig") {
+        
+        print("🚀 [BNotify] trackDeliveredEvent called with userInfo keys: \(Array(userInfo.keys))")
+        appendToLog("🚀 trackDeliveredEvent called with userInfo: \(userInfo)")
+        
         // Extract notificationId (top-level or inside aps)
         let nid = (userInfo["notificationId"] as? String)
             ?? ((userInfo["aps"] as? [String: Any])?["notificationId"] as? String)
+        
+        print("🔍 [BNotify] Extracted notificationId: \(nid ?? "nil")")
+        appendToLog("🔍 Extracted notificationId: \(nid ?? "nil")")
 
         // Load config using shared loader
-        guard let config = BNotifyConfig.load(fromBundle: .main, plistName: plistName),
-              let baseURL = URL(string: config.baseURL),
-              let url = URL(string: "/api/notifications/track-event", relativeTo: baseURL)
-        else {
+        print("🔍 [BNotify] Loading config from plist: \(plistName)")
+        appendToLog("🔍 Loading config from plist: \(plistName)")
+        
+        guard let config = BNotifyConfig.load(fromBundle: .main, plistName: plistName) else {
+            let msg = "❌ Failed to load config from \(plistName).plist"
+            print("❌ [BNotify] \(msg)")
+            appendToLog(msg)
             return
         }
+        
+        guard let baseURL = URL(string: config.baseURL) else {
+            let msg = "❌ Invalid BASE_URL: \(config.baseURL)"
+            print("❌ [BNotify] \(msg)")
+            appendToLog(msg)
+            return
+        }
+        
+        guard let url = URL(string: "/api/notifications/track-event", relativeTo: baseURL) else {
+            let msg = "❌ Failed to create API URL"
+            print("❌ [BNotify] \(msg)")
+            appendToLog(msg)
+            return
+        }
+        
+        print("✅ [BNotify] Config loaded successfully. API URL: \(url)")
+        appendToLog("✅ Config loaded successfully. API URL: \(url)")
+        
         let key = config.apiKey
         // Build tiny payload
         var body: [String: Any] = ["eventType": "received"]
@@ -80,11 +129,23 @@ public enum BNotifyExtensionSafe {
         req.addValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         req.addValue("application/json", forHTTPHeaderField: "Content-Type")
         req.timeoutInterval = 8
-        req.httpBody = try? JSONSerialization.data(withJSONObject: body, options: [])
+        
+        do {
+            req.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
+            print("✅ [BNotify] Request body created: \(body)")
+            appendToLog("✅ Request body created: \(body)")
+        } catch {
+            let msg = "❌ Failed to serialize request body: \(error)"
+            print("❌ [BNotify] \(msg)")
+            appendToLog(msg)
+            return
+        }
 
+        print("🌐 [BNotify] Starting API request to: \(url)")
+        appendToLog("🌐 Starting API request to: \(url)")
+        
         // Extension-safe session (no keychain/cookies/background tasks)
         URLSession(configuration: .ephemeral).dataTask(with: req) { data, resp, err in
-            #if DEBUG
             if let err = err {
                 let msg = "❌ [BNotify] NSE delivered POST error: \(err.localizedDescription)"
                 print(msg)
@@ -96,9 +157,44 @@ public enum BNotifyExtensionSafe {
                 }
                 print(msg)
                 appendToLog(msg)
+            } else {
+                let msg = "❓ [BNotify] Unexpected response type"
+                print(msg)
+                appendToLog(msg)
             }
-            #endif
         }.resume()
+    }
+    
+    /// Helper function to read the NSE log file from the main app
+    public static func readNSELog() -> String? {
+        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupId) else {
+            print("❌ [BNotify] Could not access App Group container: \(appGroupId)")
+            return nil
+        }
+        
+        let logURL = containerURL.appendingPathComponent(logFileName)
+        
+        guard FileManager.default.fileExists(atPath: logURL.path) else {
+            print("❌ [BNotify] Log file does not exist at: \(logURL.path)")
+            return nil
+        }
+        
+        do {
+            let content = try String(contentsOf: logURL)
+            print("✅ [BNotify] Successfully read log file (\(content.count) characters)")
+            return content
+        } catch {
+            print("❌ [BNotify] Failed to read log file: \(error)")
+            return nil
+        }
+    }
+    
+    /// Helper function to clear the NSE log file
+    public static func clearNSELog() {
+        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupId) else { return }
+        let logURL = containerURL.appendingPathComponent(logFileName)
+        try? FileManager.default.removeItem(at: logURL)
+        print("🗑️ [BNotify] Cleared NSE log file")
     }
 }
 
@@ -308,5 +404,15 @@ public final class BNotifyManager {
            let base = baseURL, let project = projectId, let app = appId, let key = apiKey {
             apiClient = APIClient(baseURL: base, projectId: project, appId: app, apiKey: key)
         }
+    }
+    
+    /// Helper function to read NSE logs from the main app
+    public func readNSELogs() -> String? {
+        return BNotifyExtensionSafe.readNSELog()
+    }
+    
+    /// Helper function to clear NSE logs from the main app
+    public func clearNSELogs() {
+        BNotifyExtensionSafe.clearNSELog()
     }
 }
