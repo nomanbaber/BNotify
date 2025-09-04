@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>BASE_URL</key>
+	<string>https://your-api-server.com</string>
+	<key>API_KEY</key>
+	<string>your-api-key-here</string>
+	<key>PROJECT_ID</key>
+	<string>your-project-id</string>
+	<key>APP_ID</key>
+	<string>your-app-id</string>
+	<key>APP_GROUP_ID</key>
+	<string>group.com.bnotify.convex.testing.BNotifyClient</string>
+</dict>
+</plist>
