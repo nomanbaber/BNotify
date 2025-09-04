@@ -412,6 +412,16 @@ public final class BNotifyManager {
     public func trackEvent(type: String,
                            userInfo: [AnyHashable: Any],
                            actionId: String? = nil) {
+        
+        print("🎯 [BNotify] trackEvent called - type: \(type), actionId: \(actionId ?? "nil")")
+        
+        // Ensure configuration is loaded (important for cold app starts)
+        ensureConfigured()
+        
+        guard isConfigured, let apiClient = apiClient else {
+            print("❌ [BNotify] Cannot track event - manager not configured")
+            return
+        }
 
         // Extract notificationId
         var nid: String? = nil
@@ -422,18 +432,24 @@ public final class BNotifyManager {
             nid = apsNid
         }
 
-        // Optional token passthrough (if you include it)
-        var Dtoken: String? = nil
+        // Extract token (if available in notification payload)
+        var deviceToken: String? = nil
         if let token = userInfo["token"] as? String {
-            Dtoken = token
+            deviceToken = token
         } else if let aps = userInfo["aps"] as? [String: Any],
                   let apsToken = aps["token"] as? String {
-            Dtoken = apsToken
+            deviceToken = apsToken
         }
 
-        print("📌 [BNotify] Extracted notificationId:", nid ?? "nil")
+        print("📌 [BNotify] Extracted notificationId: \(nid ?? "nil")")
+        print("📌 [BNotify] Extracted token: \(deviceToken ?? "nil")")
 
-        apiClient?.postEvent(type: type, notificationId: nid, actionId: actionId, token: Dtoken)
+        // Use background task to ensure the network call completes
+        withBGTask("bnotify.trackEvent.\(type)") { finish in
+            apiClient.postEvent(type: type, notificationId: nid, actionId: actionId, token: deviceToken) {
+                finish()
+            }
+        }
     }
 
     public func registerCategories() {
