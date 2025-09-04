@@ -526,16 +526,20 @@ public final class BNotifyManager {
 
     // MARK: – Helpers (app-only)
     // Keep app alive briefly for the network call (not used in NSE)
-    private func withBGTask(_ name: String = "bnotify.trackEvent", _ work: (@escaping () -> Void) -> Void) {
-        var bgTask: UIBackgroundTaskIdentifier = .invalid
-        bgTask = UIApplication.shared.beginBackgroundTask(withName: name) {
-            UIApplication.shared.endBackgroundTask(bgTask); bgTask = .invalid
+    private func withBGTask(_ name: String = "bnotify.trackEvent", _ work: (@escaping @Sendable () -> Void) -> Void) {
+        let bgTask = UIApplication.shared.beginBackgroundTask(withName: name) {
+            // This expiration handler will be called on the main thread
+            // No parameters needed for the expiration handler
         }
-        work {
-            if bgTask != .invalid {
-                UIApplication.shared.endBackgroundTask(bgTask); bgTask = .invalid
+        
+        let finish: @Sendable () -> Void = {
+            Task { @MainActor in
+                if bgTask != UIBackgroundTaskIdentifier.invalid {
+                    UIApplication.shared.endBackgroundTask(bgTask)
+                }
             }
         }
+        work(finish)
     }
 
     // Ensure plist/client are ready even on cold start (app)
