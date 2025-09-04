@@ -68,7 +68,7 @@ public class APIClient {
                    notificationId: String?,
                    actionId: String?,
                    token: String? = nil,
-                   completion: (() -> Void)? = nil) {
+                   completion: (@Sendable () -> Void)? = nil) {
 
         let event = BNotifyEvent(
             eventType: type,
@@ -78,7 +78,7 @@ public class APIClient {
 
         guard let url = URL(string: "/api/notifications/track-event", relativeTo: baseURL) else {
             print("❌ [BNotify] Invalid URL for track-event")
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 completion?()
             }
             return
@@ -93,7 +93,7 @@ public class APIClient {
             request.httpBody = try JSONEncoder().encode(event)
         } catch {
             print("❌ [BNotify] Failed to encode event: \(error)")
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 completion?()
             }
             return
@@ -110,8 +110,8 @@ public class APIClient {
                 print("📥 [BNotify] Event response body:\n\(str)")
             }
             
-            // Always call completion on main thread to prevent crashes
-            DispatchQueue.main.async {
+            // Use Task with @MainActor to ensure thread safety and prevent data races
+            Task { @MainActor in
                 completion?()
             }
         }.resume()
