@@ -26,6 +26,7 @@ struct BNotifyConfig {
             let base = dict["BASE_URL"] as? String,
             let key = dict["API_KEY"] as? String
         else {
+            
             #if DEBUG
             print("❌ [BNotify] Missing/invalid \(plistName).plist in current target (app or NSE)")
             #endif
@@ -165,8 +166,22 @@ public enum BNotifyExtensionSafe {
         let nid = (userInfo["notificationId"] as? String)
             ?? ((userInfo["aps"] as? [String: Any])?["notificationId"] as? String)
         
+        // Extract token (top-level or inside aps)
+        let token = (userInfo["token"] as? String)
+            ?? ((userInfo["aps"] as? [String: Any])?["token"] as? String)
+        
         print("🔍 [BNotify] Extracted notificationId: \(nid ?? "nil")")
+        print("🔍 [BNotify] Extracted token: \(token ?? "nil")")
         appendToLog("🔍 Extracted notificationId: \(nid ?? "nil")")
+        appendToLog("🔍 Extracted token: \(token ?? "nil")")
+
+        // Check required fields
+        guard let notificationId = nid, let deviceToken = token else {
+            let msg = "❌ Missing required fields - notificationId: \(nid ?? "nil"), token: \(token ?? "nil")"
+            print("❌ [BNotify] \(msg)")
+            appendToLog(msg)
+            return
+        }
 
         // ✅ NEW: Use smart loader (tries plist first, then App Group)
         guard let config = BNotifyConfig.loadSmart(fromBundle: .main, plistName: plistName) else {
@@ -194,9 +209,12 @@ public enum BNotifyExtensionSafe {
         appendToLog("✅ Config loaded successfully. API URL: \(url)")
         
         let key = config.apiKey
-        // Build tiny payload
-        var body: [String: Any] = ["eventType": "received"]
-        if let nid { body["notificationId"] = nid }
+        // Build payload with all required fields
+        let body: [String: Any] = [
+            "eventType": "received",
+            "notificationId": notificationId,
+            "token": deviceToken
+        ]
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
