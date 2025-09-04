@@ -10,6 +10,49 @@ import UserNotifications
 import UIKit
 import WebKit   // for userAgent extraction (unused in NSE code paths)
 
+// MARK: - Shared config loader
+struct BNotifyConfig {
+    let baseURL: String
+    let apiKey: String
+    let projectId: String?
+    let appId: String?
+    static func load(fromBundle bundle: Bundle = .main, plistName: String = "PushNotificationConfig") -> BNotifyConfig? {
+        guard
+            let url = bundle.url(forResource: plistName, withExtension: "plist"),
+            let data = try? Data(contentsOf: url),
+            let dict = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
+            let base = dict["BASE_URL"] as? String,
+            let key = dict["API_KEY"] as? String
+        else {
+            #if DEBUG
+            print("❌ [BNotify] Missing/invalid \(plistName).plist in current target (app or NSE)")
+            #endif
+            return nil
+        }
+        let project = dict["PROJECT_ID"] as? String
+        let app = dict["APP_ID"] as? String
+        return BNotifyConfig(baseURL: base, apiKey: key, projectId: project, appId: app)
+    }
+}
+
+// MARK: - App Group Log Helper
+private extension BNotifyExtensionSafe {
+    static let appGroupId = "group.com.yourcompany.bnotify" // <-- CHANGE to your App Group ID
+    static let logFileName = "bnotify_nse_api_log.txt"
+    static func appendToLog(_ message: String) {
+        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupId) else { return }
+        let logURL = containerURL.appendingPathComponent(logFileName)
+        let logMsg = "[\(Date())] \(message)\n"
+        if let handle = try? FileHandle(forWritingTo: logURL) {
+            handle.seekToEndOfFile()
+            if let data = logMsg.data(using: .utf8) { handle.write(data) }
+            handle.closeFile()
+        } else {
+            try? logMsg.write(to: logURL, atomically: true, encoding: .utf8)
+        }
+    }
+}
+
 // MARK: - Extension-safe helper (call this from your NSE)
 public enum BNotifyExtensionSafe {
     /// Post a "delivered" event from either the main app or a Notification Service Extension.
@@ -20,22 +63,14 @@ public enum BNotifyExtensionSafe {
         let nid = (userInfo["notificationId"] as? String)
             ?? ((userInfo["aps"] as? [String: Any])?["notificationId"] as? String)
 
-        // Load config from this bundle (NSE has its own bundle)
-        guard
-            let cfgURL  = Bundle.main.url(forResource: plistName, withExtension: "plist"),
-            let data    = try? Data(contentsOf: cfgURL),
-            let dict    = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
-            let baseStr = dict["BASE_URL"]   as? String,
-            let key     = dict["API_KEY"]    as? String,
-            let baseURL = URL(string: baseStr),
-            let url     = URL(string: "/api/notifications/track-event", relativeTo: baseURL)
+        // Load config using shared loader
+        guard let config = BNotifyConfig.load(fromBundle: .main, plistName: plistName),
+              let baseURL = URL(string: config.baseURL),
+              let url = URL(string: "/api/notifications/track-event", relativeTo: baseURL)
         else {
-            #if DEBUG
-            print("❌ [BNotify] Missing/invalid \(plistName).plist in current target (app or NSE)")
-            #endif
             return
         }
-
+        let key = config.apiKey
         // Build tiny payload
         var body: [String: Any] = ["eventType": "received"]
         if let nid { body["notificationId"] = nid }
@@ -51,12 +86,16 @@ public enum BNotifyExtensionSafe {
         URLSession(configuration: .ephemeral).dataTask(with: req) { data, resp, err in
             #if DEBUG
             if let err = err {
-                print("❌ [BNotify] NSE delivered POST error:", err.localizedDescription)
+                let msg = "❌ [BNotify] NSE delivered POST error: \(err.localizedDescription)"
+                print(msg)
+                appendToLog(msg)
             } else if let http = resp as? HTTPURLResponse {
-                print("📥 [BNotify] NSE delivered status:", http.statusCode)
+                var msg = "📥 [BNotify] NSE delivered status: \(http.statusCode)"
                 if let data, let s = String(data: data, encoding: .utf8), !s.isEmpty {
-                    print("📥 [BNotify] NSE delivered body:\n\(s)")
+                    msg += "\n📥 [BNotify] NSE delivered body:\n\(s)"
                 }
+                print(msg)
+                appendToLog(msg)
             }
             #endif
         }.resume()
@@ -88,32 +127,21 @@ public final class BNotifyManager {
     // MARK: – Load the plist
     private func loadConfig() {
         print("🔍 [BNotify] loadConfig()")
-        guard
-            let url  = Bundle.main.url(forResource: "PushNotificationConfig", withExtension: "plist"),
-            let data = try? Data(contentsOf: url),
-            let dict = try? PropertyListSerialization.propertyList(
-                from: data, options: [], format: nil
-            ) as? [String: Any],
-            let base      = dict["BASE_URL"]   as? String,
-            let project   = dict["PROJECT_ID"] as? String,
-            let app       = dict["APP_ID"]     as? String,
-            let key       = dict["API_KEY"]    as? String
-        else {
+        guard let config = BNotifyConfig.load() else {
             print("❌ [BNotify] Missing or invalid PushNotificationConfig.plist")
             return
         }
-        baseURL     = base
-        projectId   = project
-        appId       = app
-        apiKey      = key
+        baseURL     = config.baseURL
+        projectId   = config.projectId
+        appId       = config.appId
+        apiKey      = config.apiKey
         isConfigured = true
-
         print("""
             ✅ [BNotify] Loaded:
-               • BASE_URL:   \(base)
-               • PROJECT_ID: \(project)
-               • APP_ID:     \(app)
-               • API_KEY:    \(String(key.prefix(8)))…\(String(key.suffix(4)))
+               • BASE_URL:   \(config.baseURL)
+               • PROJECT_ID: \(config.projectId ?? "nil")
+               • APP_ID:     \(config.appId ?? "nil")
+               • API_KEY:    \(String(config.apiKey.prefix(8)))…\(String(config.apiKey.suffix(4)))
             """)
     }
 
